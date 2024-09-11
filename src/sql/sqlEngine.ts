@@ -1,4 +1,5 @@
 import { launchDockerFromFile } from '../docker/dockerManager';
+import Table from 'cli-table3';  // Importing cli-table3
 
 type Column = { name: string, type: string };
 
@@ -28,13 +29,33 @@ export class SQLEngine {
     }
   }
 
-  // Select data and print using console.table()
-  selectData(tableName: string) {
+  // Select data and print using cli-table3 (with specific columns)
+  selectData(tableName: string, columnsToSelect: string[]) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
     if (table && rows) {
-      console.table(rows); // Display the table data
+      // Ensure selected columns exist in the table schema
+      const validColumns = table.filter(col => columnsToSelect.includes(col.name));
+      if (validColumns.length === 0) {
+        console.log(`Invalid columns in SELECT statement`);
+        return;
+      }
+
+      // Initialize a new cli-table3 instance with the selected column headers
+      const cliTable = new Table({
+        head: validColumns.map((col) => col.name),  // Only include selected columns in the headers
+        colWidths: validColumns.map(() => 20),      // Set default column width
+        wordWrap: true,                             // Enable word wrapping
+      });
+
+      // Add each row to the table, only including the selected columns
+      rows.forEach((row) => {
+        const rowData = validColumns.map((col) => row[col.name]);
+        cliTable.push(rowData);  // Push only the selected column data
+      });
+
+      console.log(cliTable.toString());  // Print the formatted table
       return rows;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
@@ -64,7 +85,7 @@ export class SQLEngine {
   parseQuery(query: string) {
     const createTableRegex = /CREATE TABLE (\w+) \((.+)\)/;
     const insertRegex = /INSERT INTO (\w+) \((.+)\)/;
-    const selectRegex = /SELECT \* FROM (\w+)/;
+    const selectRegex = /SELECT (.+) FROM (\w+)/;  // Match SELECT with specific columns
     const launchRegex = /LAUNCH (\w+) FROM (\w+) WHERE (\w+) = '(.+)'/;
 
     const createTableMatch = query.match(createTableRegex);
@@ -86,8 +107,9 @@ export class SQLEngine {
       const values = insertMatch[2].split(',').map((val) => val.trim());
       this.insertData(tableName, values);
     } else if (selectMatch) {
-      const tableName = selectMatch[1];
-      this.selectData(tableName);
+      const columns = selectMatch[1].split(',').map(col => col.trim());  // Extract columns from SELECT
+      const tableName = selectMatch[2];
+      this.selectData(tableName, columns);  // Pass the columns to the selectData method
     } else if (launchMatch) {
       const columnName = launchMatch[1];
       const tableName = launchMatch[2];
