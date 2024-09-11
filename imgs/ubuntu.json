@@ -1,0 +1,5 @@
+{
+  "image": "ubuntu",
+  "name": "my-ubuntu-container",
+  "command": ["/bin/bash"]
+}

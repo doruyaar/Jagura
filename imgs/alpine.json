@@ -1,0 +1,5 @@
+{
+  "image": "alpine",
+  "command": ["/bin/sh"],
+  "name": "my-alpine-container"
+}
