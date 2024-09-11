@@ -1,0 +1,5 @@
+{
+  "image": "busybox",
+  "command": ["/bin/sh"],
+  "name": "my-busybox-container"
+}
