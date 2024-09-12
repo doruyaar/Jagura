@@ -14,6 +14,9 @@ export async function launchDockerFromFile(filePath: string) {
       Image: config.image, // Docker image from the file
       Cmd: config.command || ['/bin/bash'],
       name: config.name,
+      Tty: true,                     // Allocates a TTY (equivalent to -t)
+      AttachStdin: false,            // We don't need to attach stdin (since it's detached)
+      OpenStdin: true,               // Keep stdin open (equivalent to -i)
     });
 
     await container.start();  // Start the newly created container
