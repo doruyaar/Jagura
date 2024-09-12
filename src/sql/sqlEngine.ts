@@ -1,5 +1,5 @@
-import Table from "cli-table3";
-import { launchDockerFromFile } from "../docker/dockerManager";
+import { launchDockerFromFile } from '../docker/dockerManager';
+import Table from 'cli-table3';  // Importing cli-table3
 
 type Column = { name: string; type: string };
 
