@@ -1,7 +1,7 @@
 import { launchDockerFromFile } from '../docker/dockerManager';
 import Table from 'cli-table3';  // Importing cli-table3
 
-type Column = { name: string, type: string };
+type Column = { name: string; type: string };
 
 export class SQLEngine {
   private tables: { [tableName: string]: Column[] } = {};
@@ -14,13 +14,20 @@ export class SQLEngine {
     console.log(`Table ${tableName} created with columns:`, columns);
   }
 
+  // Helper function to clean up quotes from a string
+  cleanValue(value: string): string {
+    // Remove enclosing single or double quotes if present
+    return value.replace(/^['"](.+)['"]$/, "$1");
+  }
+
   // Insert data logic
   insertData(tableName: string, values: any[]) {
     const table = this.tables[tableName];
     if (table) {
       const rowData: any = {};
       table.forEach((col, index) => {
-        rowData[col.name] = values[index];
+        // Clean the value of quotes before inserting
+        rowData[col.name] = this.cleanValue(values[index]);
       });
       this.data[tableName].push(rowData);
       console.log(`Inserted into ${tableName}:`, rowData);
@@ -35,8 +42,19 @@ export class SQLEngine {
     const rows = this.data[tableName];
 
     if (table && rows) {
-      // Ensure selected columns exist in the table schema
-      const validColumns = table.filter(col => columnsToSelect.includes(col.name));
+      let validColumns;
+
+      // Check if * is used in the SELECT query to select all columns
+      if (columnsToSelect.length === 1 && columnsToSelect[0] === "*") {
+        // Select all columns
+        validColumns = table;
+      } else {
+        // Ensure selected columns exist in the table schema
+        validColumns = table.filter((col) =>
+          columnsToSelect.includes(col.name)
+        );
+      }
+
       if (validColumns.length === 0) {
         console.log(`Invalid columns in SELECT statement`);
         return;
@@ -44,18 +62,18 @@ export class SQLEngine {
 
       // Initialize a new cli-table3 instance with the selected column headers
       const cliTable = new Table({
-        head: validColumns.map((col) => col.name),  // Only include selected columns in the headers
-        colWidths: validColumns.map(() => 20),      // Set default column width
-        wordWrap: true,                             // Enable word wrapping
+        head: validColumns.map((col) => col.name), // Only include selected columns in the headers
+        colWidths: validColumns.map(() => 20), // Set default column width
+        wordWrap: true, // Enable word wrapping
       });
 
       // Add each row to the table, only including the selected columns
       rows.forEach((row) => {
         const rowData = validColumns.map((col) => row[col.name]);
-        cliTable.push(rowData);  // Push only the selected column data
+        cliTable.push(rowData); // Push only the selected column data
       });
 
-      console.log(cliTable.toString());  // Print the formatted table
+      console.log(cliTable.toString()); // Print the formatted table
       return rows;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
@@ -63,18 +81,26 @@ export class SQLEngine {
   }
 
   // Launch Docker container based on column and condition
-  launchDocker(tableName: string, columnName: string, condition: { key: string, value: string }) {
+  launchDocker(
+    tableName: string,
+    columnName: string,
+    condition: { key: string; value: string }
+  ) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
     if (table && rows) {
-      const rowToLaunch = rows.find((row) => row[condition.key] === condition.value);
+      const rowToLaunch = rows.find(
+        (row) => row[condition.key] === condition.value
+      );
       if (rowToLaunch && rowToLaunch[columnName]) {
-        const dockerConfigPath = rowToLaunch[columnName].replace(/'/g, ''); // Strip quotes from path
+        const dockerConfigPath = rowToLaunch[columnName].replace(/'/g, ""); // Strip quotes from path
         console.log(`Launching Docker for config file: ${dockerConfigPath}...`);
-        launchDockerFromFile(dockerConfigPath);  // Create and start Docker container
+        launchDockerFromFile(dockerConfigPath); // Create and start Docker container
       } else {
-        console.log(`No matching row found for ${condition.key} = '${condition.value}'`);
+        console.log(
+          `No matching row found for ${condition.key} = '${condition.value}'`
+        );
       }
     } else {
       console.log(`Table ${tableName} or column ${columnName} doesn't exist.`);
@@ -83,16 +109,20 @@ export class SQLEngine {
 
   // Parse the incoming query and route to the correct operation
   parseQuery(query: string) {
-    const createTableRegex = /CREATE TABLE (\w+) \((.+)\)/;
-    const insertRegex = /INSERT INTO (\w+) \((.+)\)/;
-    const selectRegex = /SELECT (.+) FROM (\w+)/;  // Match SELECT with specific columns
-    const launchRegex = /LAUNCH (\w+) FROM (\w+) WHERE (\w+) = '(.+)'/;
-
-    const createTableMatch = query.match(createTableRegex);
-    const insertMatch = query.match(insertRegex);
-    const selectMatch = query.match(selectRegex);
-    const launchMatch = query.match(launchRegex);
-
+    // Convert the entire query to lowercase to handle case insensitivity
+    const lowerCaseQuery = query.toLowerCase().trim();
+  
+    // Regular expressions for matching the query parts
+    const createTableRegex = /create table (\w+) \((.+)\)/;
+    const insertRegex = /insert into (\w+) \((.+)\)/;
+    const selectRegex = /select (.+) from (\w+)/;  // Match SELECT with specific columns
+    const launchRegex = /launch (\w+) from (\w+) where (\w+) = (\d+)/;  // Fix to handle numeric condition values
+  
+    const createTableMatch = lowerCaseQuery.match(createTableRegex);
+    const insertMatch = lowerCaseQuery.match(insertRegex);
+    const selectMatch = lowerCaseQuery.match(selectRegex);
+    const launchMatch = lowerCaseQuery.match(launchRegex);
+  
     if (createTableMatch) {
       const tableName = createTableMatch[1];
       const columns = createTableMatch[2]
@@ -120,4 +150,5 @@ export class SQLEngine {
       console.log('Invalid query.');
     }
   }
+  
 }
