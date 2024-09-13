@@ -16,10 +16,13 @@ export class SQLEngine {
     console.log(`Table ${tableName} created with columns:`, columns);
   }
 
+  // Helper function to clean up quotes from a string
   cleanValue(value: string): string {
+    // Remove enclosing single or double quotes if present
     return value.replace(/^['"](.+)['"]$/, "$1");
   }
 
+  // Insert data logic
   insertData(tableName: string, values: any[]) {
     const table = this.tables[tableName];
     if (table) {
@@ -121,7 +124,9 @@ export class SQLEngine {
         console.log(`Launching Docker for config file: ${dockerConfigPath}...`);
         launchDockerFromFile(dockerConfigPath);
       } else {
-        console.log(`No matching row found for ${condition.key} = '${condition.value}'`);
+        console.log(
+          `No matching row found for ${condition.key} = '${condition.value}'`
+        );
       }
     } else {
       console.log(`Table ${tableName} or column ${columnName} doesn't exist.`);
@@ -139,7 +144,6 @@ export class SQLEngine {
     const insertMatch = lowerCaseQuery.match(insertRegex);
     const selectMatch = lowerCaseQuery.match(selectRegex);
     const launchMatch = lowerCaseQuery.match(launchRegex);
-
     if (createTableMatch) {
       const tableName = createTableMatch[1];
       const columns = createTableMatch[2]
@@ -167,5 +171,6 @@ export class SQLEngine {
       console.log('Invalid query.');
     }
   }
+  
 }
 
