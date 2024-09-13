@@ -6,6 +6,7 @@ import fs from 'node:fs';
 const docker = new Docker();
 
 type Column = { name: string, type: string };
+
 export class SQLEngine {
   private tables: { [tableName: string]: Column[] } = {};
   private data: { [tableName: string]: any[] } = {};
@@ -16,13 +17,10 @@ export class SQLEngine {
     console.log(`Table ${tableName} created with columns:`, columns);
   }
 
-  // Helper function to clean up quotes from a string
   cleanValue(value: string): string {
-    // Remove enclosing single or double quotes if present
     return value.replace(/^['"](.+)['"]$/, "$1");
   }
 
-  // Insert data logic
   insertData(tableName: string, values: any[]) {
     const table = this.tables[tableName];
     if (table) {
@@ -64,29 +62,75 @@ export class SQLEngine {
     }
   }
 
+  async runCommandInDocker(configPath: string, command: string): Promise<any> {
+    try {
+      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const containerName = dockerConfig.name || dockerConfig.container_id;
+      if (!containerName) {
+        throw new Error('Container name or ID not found in the config.');
+      }
+
+      const container = docker.getContainer(containerName);
+      const exec = await container.exec({
+        Cmd: ['sh', '-c', command],
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+
+      const stream = await exec.start({});
+
+      return new Promise((resolve, reject) => {
+        let output = '';
+        stream.on('data', (data) => {
+          output += data.toString();
+        });
+
+        stream.on('end', () => {
+          resolve(output.trim());
+        });
+
+        stream.on('error', (err) => {
+          reject(err);
+        });
+      });
+
+    } catch (error) {
+      console.error(`Error running command in Docker container ${configPath}:`, error);
+      return null;
+    }
+  }
+
   async selectData(tableName: string, columnsToSelect: string[]) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
-  
+
     if (table && rows) {
       let selectedColumns;
-  
-      // If columnsToSelect includes *, select all columns from the table
+
       if (columnsToSelect.length === 1 && columnsToSelect[0] === '*') {
-        selectedColumns = table.map(col => col.name);  // Select all column names
+        selectedColumns = table.map(col => col.name);
       } else {
         selectedColumns = columnsToSelect;
       }
-  
+
       const cliTable = new Table({
-        head: selectedColumns.map((col) => col.includes('metadata(') ? `${col.replace('metadata(', '').replace(')', '')}.metadata` : col),
+        head: selectedColumns.map((col) => {
+          if (col.includes('metadata(')) {
+            return `${col.replace('metadata(', '').replace(')', '')}.metadata`;
+          } else if (col.includes('run_cmd(')) {
+            const dockerColName = col.split('.')[0]; // Extract the Docker column name
+            return `${dockerColName}.run_cmd`; // Name the column as <dockerColName>.run_cmd
+          } else {
+            return col;
+          }
+        }),
         colWidths: selectedColumns.map(() => 20),
         wordWrap: true,
       });
-  
+
       for (const row of rows) {
         const rowData: string[] = [];
-  
+
         for (const col of selectedColumns) {
           if (col.includes('metadata(')) {
             const colName = col.replace('metadata(', '').replace(')', '');
@@ -97,21 +141,33 @@ export class SQLEngine {
             } else {
               rowData.push("Invalid Docker column");
             }
+          } else if (col.includes('run_cmd(')) {
+            const match = col.match(/run_cmd\("(.+)"\)/);
+            if (match) {
+              const command = match[1];
+              const dockerColName = col.split('.')[0]; // Extract the Docker column name
+              const dockerColumn = table.find(c => c.name === dockerColName && c.type.toUpperCase() === "DOCKER");
+              if (dockerColumn) {
+                const result = await this.runCommandInDocker(row[dockerColName], command);
+                rowData.push(result || "No result");
+              } else {
+                rowData.push("Invalid Docker column");
+              }
+            }
           } else {
             rowData.push(String(row[col]));
           }
         }
-  
+
         cliTable.push(rowData);
       }
-  
+
       console.log(cliTable.toString());
       return rows;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
     }
   }
-  
 
   launchDocker(tableName: string, columnName: string, condition: { key: string, value: string | number }) {
     const table = this.tables[tableName];
@@ -171,6 +227,4 @@ export class SQLEngine {
       console.log('Invalid query.');
     }
   }
-  
 }
-
