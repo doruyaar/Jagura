@@ -114,7 +114,16 @@ export class SQLEngine {
       }
 
       const cliTable = new Table({
-        head: selectedColumns.map((col) => col.includes('metadata(') ? `${col.replace('metadata(', '').replace(')', '')}.metadata` : col.includes('run_cmd(') ? `${col.replace('run_cmd(', '').replace(')', '')}.run_cmd` : col),
+        head: selectedColumns.map((col) => {
+          if (col.includes('metadata(')) {
+            return `${col.replace('metadata(', '').replace(')', '')}.metadata`;
+          } else if (col.includes('run_cmd(')) {
+            const dockerColName = col.split('.')[0]; // Extract the Docker column name
+            return `${dockerColName}.run_cmd`; // Name the column as <dockerColName>.run_cmd
+          } else {
+            return col;
+          }
+        }),
         colWidths: selectedColumns.map(() => 20),
         wordWrap: true,
       });
@@ -136,10 +145,10 @@ export class SQLEngine {
             const match = col.match(/run_cmd\("(.+)"\)/);
             if (match) {
               const command = match[1];
-              const colName = col.split('.run_cmd')[0];
-              const dockerColumn = table.find(c => c.name === colName && c.type.toUpperCase() === "DOCKER");
+              const dockerColName = col.split('.')[0]; // Extract the Docker column name
+              const dockerColumn = table.find(c => c.name === dockerColName && c.type.toUpperCase() === "DOCKER");
               if (dockerColumn) {
-                const result = await this.runCommandInDocker(row[colName], command);
+                const result = await this.runCommandInDocker(row[dockerColName], command);
                 rowData.push(result || "No result");
               } else {
                 rowData.push("Invalid Docker column");
