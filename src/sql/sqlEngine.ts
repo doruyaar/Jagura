@@ -1,13 +1,15 @@
-import { launchDockerFromFile } from '../docker/dockerManager';
-import Table from 'cli-table3';  // Importing cli-table3
+import Docker from "dockerode";
+import { launchDockerFromFile } from "../docker/dockerManager";
+import Table from "cli-table3";
+import fs from 'node:fs';
 
-type Column = { name: string; type: string };
+const docker = new Docker();
 
+type Column = { name: string, type: string };
 export class SQLEngine {
   private tables: { [tableName: string]: Column[] } = {};
-  private data: { [tableName: string]: any[] } = {}; // In-memory storage
+  private data: { [tableName: string]: any[] } = {};
 
-  // Create table logic
   createTable(tableName: string, columns: Column[]) {
     this.tables[tableName] = columns;
     this.data[tableName] = [];
@@ -26,7 +28,6 @@ export class SQLEngine {
     if (table) {
       const rowData: any = {};
       table.forEach((col, index) => {
-        // Clean the value of quotes before inserting
         rowData[col.name] = this.cleanValue(values[index]);
       });
       this.data[tableName].push(rowData);
@@ -36,67 +37,92 @@ export class SQLEngine {
     }
   }
 
-  // Select data and print using cli-table3 (with specific columns)
-  selectData(tableName: string, columnsToSelect: string[]) {
+  async getDockerMetadata(configPath: string): Promise<any> {
+    try {
+      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const containerName = dockerConfig.name || dockerConfig.container_id;
+      if (!containerName) {
+        throw new Error('Container name or ID not found in the config.');
+      }
+
+      const container = docker.getContainer(containerName);
+      const inspectData = await container.inspect();
+      const stats = await container.stats({ stream: false });
+
+      const metadata = {
+        name: inspectData.Name,
+        status: inspectData.State.Status,
+        port: inspectData.NetworkSettings.Ports,
+        cpuUsage: stats.cpu_stats.cpu_usage.total_usage,
+        lastStarted: inspectData.State.StartedAt,
+      };
+
+      return metadata;
+    } catch (error) {
+      console.error(`Error fetching metadata for container ${configPath}:`, error);
+      return null;
+    }
+  }
+
+  async selectData(tableName: string, columnsToSelect: string[]) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
-
+  
     if (table && rows) {
-      let validColumns;
-
-      // Check if * is used in the SELECT query to select all columns
-      if (columnsToSelect.length === 1 && columnsToSelect[0] === "*") {
-        // Select all columns
-        validColumns = table;
+      let selectedColumns;
+  
+      // If columnsToSelect includes *, select all columns from the table
+      if (columnsToSelect.length === 1 && columnsToSelect[0] === '*') {
+        selectedColumns = table.map(col => col.name);  // Select all column names
       } else {
-        // Ensure selected columns exist in the table schema
-        validColumns = table.filter((col) =>
-          columnsToSelect.includes(col.name)
-        );
+        selectedColumns = columnsToSelect;
       }
-
-      if (validColumns.length === 0) {
-        console.log(`Invalid columns in SELECT statement`);
-        return;
-      }
-
-      // Initialize a new cli-table3 instance with the selected column headers
+  
       const cliTable = new Table({
-        head: validColumns.map((col) => col.name), // Only include selected columns in the headers
-        colWidths: validColumns.map(() => 20), // Set default column width
-        wordWrap: true, // Enable word wrapping
+        head: selectedColumns.map((col) => col.includes('metadata(') ? `${col.replace('metadata(', '').replace(')', '')}.metadata` : col),
+        colWidths: selectedColumns.map(() => 20),
+        wordWrap: true,
       });
-
-      // Add each row to the table, only including the selected columns
-      rows.forEach((row) => {
-        const rowData = validColumns.map((col) => row[col.name]);
-        cliTable.push(rowData); // Push only the selected column data
-      });
-
-      console.log(cliTable.toString()); // Print the formatted table
+  
+      for (const row of rows) {
+        const rowData: string[] = [];
+  
+        for (const col of selectedColumns) {
+          if (col.includes('metadata(')) {
+            const colName = col.replace('metadata(', '').replace(')', '');
+            const dockerColumn = table.find(c => c.name === colName && c.type.toUpperCase() === "DOCKER");
+            if (dockerColumn) {
+              const metadata = await this.getDockerMetadata(row[colName]);
+              rowData.push(metadata ? JSON.stringify(metadata, null, 2) : "No metadata");
+            } else {
+              rowData.push("Invalid Docker column");
+            }
+          } else {
+            rowData.push(String(row[col]));
+          }
+        }
+  
+        cliTable.push(rowData);
+      }
+  
+      console.log(cliTable.toString());
       return rows;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
     }
   }
+  
 
-  // Launch Docker container based on column and condition
-  launchDocker(
-    tableName: string,
-    columnName: string,
-    condition: { key: string; value: string }
-  ) {
+  launchDocker(tableName: string, columnName: string, condition: { key: string, value: string | number }) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
     if (table && rows) {
-      const rowToLaunch = rows.find(
-        (row) => row[condition.key] === condition.value
-      );
+      const rowToLaunch = rows.find(row => row[condition.key] == condition.value);
       if (rowToLaunch && rowToLaunch[columnName]) {
-        const dockerConfigPath = rowToLaunch[columnName].replace(/'/g, ""); // Strip quotes from path
+        const dockerConfigPath = rowToLaunch[columnName].replace(/'/g, "");
         console.log(`Launching Docker for config file: ${dockerConfigPath}...`);
-        launchDockerFromFile(dockerConfigPath); // Create and start Docker container
+        launchDockerFromFile(dockerConfigPath);
       } else {
         console.log(
           `No matching row found for ${condition.key} = '${condition.value}'`
@@ -107,29 +133,24 @@ export class SQLEngine {
     }
   }
 
-  // Parse the incoming query and route to the correct operation
-  parseQuery(query: string) {
-    // Convert the entire query to lowercase to handle case insensitivity
+  async parseQuery(query: string) {
     const lowerCaseQuery = query.toLowerCase().trim();
-  
-    // Regular expressions for matching the query parts
     const createTableRegex = /create table (\w+) \((.+)\)/;
     const insertRegex = /insert into (\w+) \((.+)\)/;
-    const selectRegex = /select (.+) from (\w+)/;  // Match SELECT with specific columns
-    const launchRegex = /launch (\w+) from (\w+) where (\w+) = (\d+)/;  // Fix to handle numeric condition values
-  
+    const selectRegex = /select (.+) from (\w+)/;
+    const launchRegex = /launch (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+
     const createTableMatch = lowerCaseQuery.match(createTableRegex);
     const insertMatch = lowerCaseQuery.match(insertRegex);
     const selectMatch = lowerCaseQuery.match(selectRegex);
     const launchMatch = lowerCaseQuery.match(launchRegex);
-  
     if (createTableMatch) {
       const tableName = createTableMatch[1];
       const columns = createTableMatch[2]
         .split(',')
         .map((col) => {
           const [name, type] = col.trim().split(' ');
-          return { name, type };
+          return { name, type: type.toUpperCase() };
         });
       this.createTable(tableName, columns);
     } else if (insertMatch) {
@@ -137,9 +158,9 @@ export class SQLEngine {
       const values = insertMatch[2].split(',').map((val) => val.trim());
       this.insertData(tableName, values);
     } else if (selectMatch) {
-      const columns = selectMatch[1].split(',').map(col => col.trim());  // Extract columns from SELECT
+      const columns = selectMatch[1].split(',').map(col => col.trim());
       const tableName = selectMatch[2];
-      this.selectData(tableName, columns);  // Pass the columns to the selectData method
+      await this.selectData(tableName, columns);
     } else if (launchMatch) {
       const columnName = launchMatch[1];
       const tableName = launchMatch[2];
@@ -152,3 +173,4 @@ export class SQLEngine {
   }
   
 }
+
