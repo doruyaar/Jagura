@@ -10,11 +10,13 @@ export async function launchDockerFromFile(filePath: string) {
 
     const container = await docker.createContainer({
       Image: config.image,
-      Cmd: config.command || ["/bin/bash"],
+      Cmd: config.command,
       name: config.name,
       Tty: true,
       AttachStdin: false,
       OpenStdin: true,
+      ExposedPorts: config.exposedPorts || {},
+      HostConfig: config.hostConfig || {},
     });
 
     await container.start();

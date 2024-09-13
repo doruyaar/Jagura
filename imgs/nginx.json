@@ -1,0 +1,17 @@
+{
+  "image": "nginx",
+  "name": "my-nginx-container",
+  "command": [],
+  "exposedPorts": {
+    "80/tcp": {}
+  },
+  "hostConfig": {
+    "PortBindings": {
+      "80/tcp": [
+        {
+          "HostPort": "8080"
+        }
+      ]
+    }
+  }
+}

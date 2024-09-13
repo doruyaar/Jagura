@@ -103,34 +103,34 @@ export class SQLEngine {
   async selectData(tableName: string, columnsToSelect: string[]) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
-
+  
     if (table && rows) {
       let selectedColumns;
-
+  
       if (columnsToSelect.length === 1 && columnsToSelect[0] === '*') {
         selectedColumns = table.map(col => col.name);
       } else {
         selectedColumns = columnsToSelect;
       }
-
+  
       const cliTable = new Table({
         head: selectedColumns.map((col) => {
           if (col.includes('metadata(')) {
             return `${col.replace('metadata(', '').replace(')', '')}.metadata`;
           } else if (col.includes('run_cmd(')) {
-            const dockerColName = col.split('.')[0]; // Extract the Docker column name
-            return `${dockerColName}.run_cmd`; // Name the column as <dockerColName>.run_cmd
+            const dockerColName = col.split('.')[0];
+            return `${dockerColName}.run_cmd`;
           } else {
             return col;
           }
         }),
-        colWidths: selectedColumns.map(() => 20),
+        colWidths: selectedColumns.map((col) => col.includes('metadata(') ? 50 : 20), // Increase width for metadata columns
         wordWrap: true,
       });
-
+  
       for (const row of rows) {
         const rowData: string[] = [];
-
+  
         for (const col of selectedColumns) {
           if (col.includes('metadata(')) {
             const colName = col.replace('metadata(', '').replace(')', '');
@@ -145,7 +145,7 @@ export class SQLEngine {
             const match = col.match(/run_cmd\("(.+)"\)/);
             if (match) {
               const command = match[1];
-              const dockerColName = col.split('.')[0]; // Extract the Docker column name
+              const dockerColName = col.split('.')[0];
               const dockerColumn = table.find(c => c.name === dockerColName && c.type.toUpperCase() === "DOCKER");
               if (dockerColumn) {
                 const result = await this.runCommandInDocker(row[dockerColName], command);
@@ -158,16 +158,17 @@ export class SQLEngine {
             rowData.push(String(row[col]));
           }
         }
-
+  
         cliTable.push(rowData);
       }
-
+  
       console.log(cliTable.toString());
       return rows;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
     }
   }
+  
 
   launchDocker(tableName: string, columnName: string, condition: { key: string, value: string | number }) {
     const table = this.tables[tableName];
