@@ -100,19 +100,25 @@ export class SQLEngine {
     }
   }
 
-  async selectData(tableName: string, columnsToSelect: string[]) {
+  async selectData(tableName: string, columnsToSelect: string[], whereCondition?: { key: string, value: string | number }) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
-  
+
     if (table && rows) {
       let selectedColumns;
-  
+
       if (columnsToSelect.length === 1 && columnsToSelect[0] === '*') {
         selectedColumns = table.map(col => col.name);
       } else {
         selectedColumns = columnsToSelect;
       }
-  
+
+      let filteredRows = rows;
+
+      if (whereCondition) {
+        filteredRows = rows.filter(row => row[whereCondition.key] == whereCondition.value);
+      }
+
       const cliTable = new Table({
         head: selectedColumns.map((col) => {
           if (col.includes('metadata(')) {
@@ -127,10 +133,10 @@ export class SQLEngine {
         colWidths: selectedColumns.map((col) => col.includes('metadata(') ? 50 : 20), // Increase width for metadata columns
         wordWrap: true,
       });
-  
-      for (const row of rows) {
+
+      for (const row of filteredRows) {
         const rowData: string[] = [];
-  
+
         for (const col of selectedColumns) {
           if (col.includes('metadata(')) {
             const colName = col.replace('metadata(', '').replace(')', '');
@@ -158,17 +164,16 @@ export class SQLEngine {
             rowData.push(String(row[col]));
           }
         }
-  
+
         cliTable.push(rowData);
       }
-  
+
       console.log(cliTable.toString());
-      return rows;
+      return filteredRows;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
     }
   }
-  
 
   launchDocker(tableName: string, columnName: string, condition: { key: string, value: string | number }) {
     const table = this.tables[tableName];
@@ -195,12 +200,15 @@ export class SQLEngine {
     const createTableRegex = /create table (\w+) \((.+)\)/;
     const insertRegex = /insert into (\w+) \((.+)\)/;
     const selectRegex = /select (.+) from (\w+)/;
+    const whereRegex = /where (\w+) = ['"]?(.+?)['"]?/;
     const launchRegex = /launch (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
 
     const createTableMatch = lowerCaseQuery.match(createTableRegex);
     const insertMatch = lowerCaseQuery.match(insertRegex);
     const selectMatch = lowerCaseQuery.match(selectRegex);
+    const whereMatch = lowerCaseQuery.match(whereRegex);
     const launchMatch = lowerCaseQuery.match(launchRegex);
+
     if (createTableMatch) {
       const tableName = createTableMatch[1];
       const columns = createTableMatch[2]
@@ -217,7 +225,14 @@ export class SQLEngine {
     } else if (selectMatch) {
       const columns = selectMatch[1].split(',').map(col => col.trim());
       const tableName = selectMatch[2];
-      await this.selectData(tableName, columns);
+
+      if (whereMatch) {
+        const whereKey = whereMatch[1];
+        const whereValue = whereMatch[2];
+        await this.selectData(tableName, columns, { key: whereKey, value: whereValue });
+      } else {
+        await this.selectData(tableName, columns);
+      }
     } else if (launchMatch) {
       const columnName = launchMatch[1];
       const tableName = launchMatch[2];
