@@ -100,6 +100,36 @@ export class SQLEngine {
     }
   }
 
+  async stopAndRemoveDockerContainers(tableName: string) {
+    const table = this.tables[tableName];
+    const rows = this.data[tableName];
+
+    if (!table || !rows) {
+      console.log(`Table ${tableName} doesn't exist.`);
+      return;
+    }
+
+    for (const row of rows) {
+      for (const col of table) {
+        if (col.type.toUpperCase() === 'DOCKER') {
+          const dockerConfigPath = row[col.name];
+          try {
+            const dockerConfig = JSON.parse(fs.readFileSync(dockerConfigPath, 'utf8'));
+            const containerName = dockerConfig.name || dockerConfig.container_id;
+            if (!containerName) continue;
+
+            const container = docker.getContainer(containerName);
+            await container.stop();
+            await container.remove();
+            console.log(`Container ${containerName} stopped and removed.`);
+          } catch (error) {
+            console.error(`Error stopping or removing Docker container ${dockerConfigPath}:`, error);
+          }
+        }
+      }
+    }
+  }
+
   async selectData(tableName: string, columnsToSelect: string[], whereCondition?: { key: string, value: string | number }) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
@@ -130,7 +160,7 @@ export class SQLEngine {
             return col;
           }
         }),
-        colWidths: selectedColumns.map((col) => col.includes('metadata(') ? 50 : 20), // Increase width for metadata columns
+        colWidths: selectedColumns.map((col) => col.includes('metadata(') ? 50 : 20),
         wordWrap: true,
       });
 
@@ -175,6 +205,21 @@ export class SQLEngine {
     }
   }
 
+  async dropTable(tableName: string) {
+    if (this.tables[tableName]) {
+      // Stop and remove Docker containers
+      await this.stopAndRemoveDockerContainers(tableName);
+
+      // Delete the table and its records
+      delete this.tables[tableName];
+      delete this.data[tableName];
+
+      console.log(`Table ${tableName} and its records have been dropped.`);
+    } else {
+      console.log(`Table ${tableName} does not exist.`);
+    }
+  }
+
   launchDocker(tableName: string, columnName: string, condition: { key: string, value: string | number }) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
@@ -202,12 +247,14 @@ export class SQLEngine {
     const selectRegex = /select (.+) from (\w+)/;
     const whereRegex = /where (\w+) = ['"]?(.+?)['"]?/;
     const launchRegex = /launch (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const dropTableRegex = /drop table (\w+)/;
 
     const createTableMatch = lowerCaseQuery.match(createTableRegex);
     const insertMatch = lowerCaseQuery.match(insertRegex);
     const selectMatch = lowerCaseQuery.match(selectRegex);
     const whereMatch = lowerCaseQuery.match(whereRegex);
     const launchMatch = lowerCaseQuery.match(launchRegex);
+    const dropTableMatch = lowerCaseQuery.match(dropTableRegex);
 
     if (createTableMatch) {
       const tableName = createTableMatch[1];
@@ -239,6 +286,9 @@ export class SQLEngine {
       const conditionKey = launchMatch[3];
       const conditionValue = launchMatch[4];
       this.launchDocker(tableName, columnName, { key: conditionKey, value: conditionValue });
+    } else if (dropTableMatch) {
+      const tableName = dropTableMatch[1];
+      await this.dropTable(tableName);
     } else {
       console.log('Invalid query.');
     }
