@@ -1,11 +1,11 @@
 import Docker from "dockerode";
 import { launchDockerFromFile } from "../docker/dockerManager";
 import Table from "cli-table3";
-import fs from "node:fs";
+import fs from 'node:fs';
 
 const docker = new Docker();
 
-type Column = { name: string; type: string };
+type Column = { name: string, type: string };
 
 export class SQLEngine {
   private tables: { [tableName: string]: Column[] } = {};
@@ -35,11 +35,7 @@ export class SQLEngine {
     }
   }
 
-  // Utility to safely access nested properties, with exact casing
-  getNestedProperty(obj: any, path: string) {
-    return path.split(".").reduce((prev, curr) => prev && prev[curr], obj);
-  }
-
+  // Fetch Docker container metadata
   async getDockerMetadata(configPath: string, queryProperty?: string): Promise<any> {
     try {
       const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -47,213 +43,279 @@ export class SQLEngine {
       if (!containerName) {
         throw new Error('Container name or ID not found in the config.');
       }
-  
+
       const container = docker.getContainer(containerName);
+
+      // Check if the container is running
       const inspectData = await container.inspect();
+      if (!inspectData.State.Running) {
+        throw new Error(`Container ${containerName} is not running.`);
+      }
+
       const stats = await container.stats({ stream: false });
-  
+
       // Create a full metadata object
       const metadata = {
         name: inspectData.Name,
         status: inspectData.State.Status,
         port: inspectData.NetworkSettings.Ports,
-        cpuUsage: stats.cpu_stats?.cpu_usage?.total_usage ?? 'N/A',  // Use the checked cpuUsage value
-        lastStarted: inspectData?.State?.StartedAt ?? 'N/A',         // Use the checked lastStarted value
+        cpuUsage: stats.cpu_stats?.cpu_usage?.total_usage ?? 'N/A',
+        lastStarted: inspectData?.State?.StartedAt ?? 'N/A',
       };
-  
-      // Define the valid keys for metadata
-      type MetadataKey = keyof typeof metadata;
-  
-      // Mapping for lowercase queryProperty to camelCase metadata fields
-      const metadataMapping: { [key: string]: MetadataKey } = {
-        'name': 'name',
-        'status': 'status',
-        'port': 'port',
-        'cpuusage': 'cpuUsage',
-        'laststarted': 'lastStarted',
-      };
-  
-      // If a specific property is requested (e.g., 'name', 'status', 'port', 'cpuUsage', 'lastStarted')
+
+      // Handle specific property query
       if (queryProperty) {
         const lowerCaseQuery = queryProperty.toLowerCase();
-  
-        // Check if lowerCaseQuery is a valid key in metadataMapping
+        const metadataMapping: { [key: string]: keyof typeof metadata } = {
+          'name': 'name',
+          'status': 'status',
+          'port': 'port',
+          'cpuusage': 'cpuUsage',
+          'laststarted': 'lastStarted',
+        };
+
         if (lowerCaseQuery in metadataMapping) {
-          const camelCaseKey = metadataMapping[lowerCaseQuery]; // Get the corresponding camelCase key
-          return metadata[camelCaseKey]; // Return the specific metadata property
+          const camelCaseKey = metadataMapping[lowerCaseQuery];
+          return metadata[camelCaseKey];
         } else {
-          return 'Property not found'; // Return if the property doesn't exist
+          return 'Property not found';
         }
       }
-  
-      // If no specific property requested, return the full metadata object
+
       return metadata;
-    } catch (error) {
-      console.error(`Error fetching metadata for container ${configPath}:`, error);
+    } catch (error: any) {
+      console.error(`Error fetching metadata for container ${configPath}:`, error.message);
       return null;
     }
   }
-  
 
-  async runCommandInDocker(
-    configPath: string,
-    command: string
-  ): Promise<string> {
+  // Docker Container Operations (Stop, Kill, Restart, Remove)
+  async stopDockerContainer(configPath: string): Promise<void> {
     try {
-      const dockerConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       const containerName = dockerConfig.name || dockerConfig.container_id;
       if (!containerName) {
-        throw new Error("Container name or ID not found in the config.");
+        throw new Error('Container name or ID not found in the config.');
       }
 
       const container = docker.getContainer(containerName);
-      const exec = await container.exec({
-        Cmd: ["sh", "-c", command],
-        AttachStdout: true,
-        AttachStderr: true,
-      });
-
-      const stream = await exec.start({});
-
-      return new Promise((resolve, reject) => {
-        let output = "";
-        stream.on("data", (data) => {
-          output += data.toString();
-        });
-
-        stream.on("end", () => {
-          resolve(output.trim());
-        });
-
-        stream.on("error", (err) => {
-          reject(err);
-        });
-      });
+      await container.stop();
+      console.log(`Container ${containerName} stopped.`);
     } catch (error) {
-      console.error(
-        `Error running command in Docker container ${configPath}:`,
-        error
-      );
-      return "Error running command in Docker container";
+      console.error(`Error stopping Docker container ${configPath}:`, error);
     }
   }
 
-  extractJsonFromString(str: string): any {
-    const jsonStart = str.indexOf("{");
-    const jsonEnd = str.lastIndexOf("}");
-    if (jsonStart !== -1 && jsonEnd !== -1) {
-      try {
-        const jsonString = str.substring(jsonStart, jsonEnd + 1);
-        return JSON.parse(jsonString);
-      } catch (error) {
-        return null;
+  async killDockerContainer(configPath: string): Promise<void> {
+    try {
+      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const containerName = dockerConfig.name || dockerConfig.container_id;
+      if (!containerName) {
+        throw new Error('Container name or ID not found in the config.');
       }
+
+      const container = docker.getContainer(containerName);
+      await container.kill();
+      console.log(`Container ${containerName} killed.`);
+    } catch (error) {
+      console.error(`Error killing Docker container ${configPath}:`, error);
     }
-    return null;
   }
 
-  async selectData(
-    tableName: string,
-    columnsToSelect: string[],
-    whereCondition?: { key: string; value: string | number }
-  ) {
+  async restartDockerContainer(configPath: string): Promise<void> {
+    try {
+      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const containerName = dockerConfig.name || dockerConfig.container_id;
+      if (!containerName) {
+        throw new Error('Container name or ID not found in the config.');
+      }
+
+      const container = docker.getContainer(containerName);
+      await container.restart();
+      console.log(`Container ${containerName} restarted.`);
+    } catch (error) {
+      console.error(`Error restarting Docker container ${configPath}:`, error);
+    }
+  }
+
+  async removeDockerContainer(configPath: string): Promise<void> {
+    try {
+      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const containerName = dockerConfig.name || dockerConfig.container_id;
+      if (!containerName) {
+        throw new Error('Container name or ID not found in the config.');
+      }
+
+      const container = docker.getContainer(containerName);
+      await container.remove();
+      console.log(`Container ${containerName} removed.`);
+    } catch (error) {
+      console.error(`Error removing Docker container ${configPath}:`, error);
+    }
+  }
+
+  // Utility function to get a row by condition
+  getRowByCondition(tableName: string, columnName: string, conditionKey: string, conditionValue: string | number): any {
+    const table = this.tables[tableName];
+    const rows = this.data[tableName];
+    if (!table || !rows) {
+      console.log(`Table ${tableName} or column ${columnName} doesn't exist.`);
+      return null;
+    }
+    return rows.find(row => row[conditionKey] == conditionValue);
+  }
+
+  // Query Parser
+  async parseQuery(query: string) {
+    const lowerCaseQuery = query.toLowerCase().trim();
+    const createTableRegex = /create table (\w+) \((.+)\)/;
+    const insertRegex = /insert into (\w+) \((.+)\)/;
+    const selectRegex = /select (.+) from (\w+)/;
+    const whereRegex = /where (\w+) = ['"]?(.+?)['"]?/;
+    const startRegex = /start (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const stopRegex = /stop (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const killRegex = /kill (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const restartRegex = /restart (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const removeRegex = /remove (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const dropTableRegex = /drop table (\w+)/;
+
+    const createTableMatch = lowerCaseQuery.match(createTableRegex);
+    const insertMatch = lowerCaseQuery.match(insertRegex);
+    const selectMatch = lowerCaseQuery.match(selectRegex);
+    const whereMatch = lowerCaseQuery.match(whereRegex);
+    const startMatch = lowerCaseQuery.match(startRegex);
+    const stopMatch = lowerCaseQuery.match(stopRegex);
+    const killMatch = lowerCaseQuery.match(killRegex);
+    const restartMatch = lowerCaseQuery.match(restartRegex);
+    const removeMatch = lowerCaseQuery.match(removeRegex);
+    const dropTableMatch = lowerCaseQuery.match(dropTableRegex);
+
+    if (createTableMatch) {
+      const tableName = createTableMatch[1];
+      const columns = createTableMatch[2]
+        .split(',')
+        .map((col) => {
+          const [name, type] = col.trim().split(' ');
+          return { name, type: type.toUpperCase() };
+        });
+      this.createTable(tableName, columns);
+    } else if (insertMatch) {
+      const tableName = insertMatch[1];
+      const values = insertMatch[2].split(',').map((val) => val.trim());
+      this.insertData(tableName, values);
+    } else if (selectMatch) {
+      const columns = selectMatch[1].split(',').map(col => col.trim());
+      const tableName = selectMatch[2];
+
+      if (whereMatch) {
+        const whereKey = whereMatch[1];
+        const whereValue = whereMatch[2];
+        await this.selectData(tableName, columns, { key: whereKey, value: whereValue });
+      } else {
+        await this.selectData(tableName, columns);
+      }
+    } else if (startMatch) {
+      const columnName = startMatch[1];
+      const tableName = startMatch[2];
+      const conditionKey = startMatch[3];
+      const conditionValue = startMatch[4];
+      this.startDocker(tableName, columnName, { key: conditionKey, value: conditionValue });
+    } else if (stopMatch) {
+      const columnName = stopMatch[1];
+      const tableName = stopMatch[2];
+      const conditionKey = stopMatch[3];
+      const conditionValue = stopMatch[4];
+      const row = this.getRowByCondition(tableName, columnName, conditionKey, conditionValue);
+      if (row) await this.stopDockerContainer(row[columnName]);
+    } else if (killMatch) {
+      const columnName = killMatch[1];
+      const tableName = killMatch[2];
+      const conditionKey = killMatch[3];
+      const conditionValue = killMatch[4];
+      const row = this.getRowByCondition(tableName, columnName, conditionKey, conditionValue);
+      if (row) await this.killDockerContainer(row[columnName]);
+    } else if (restartMatch) {
+      const columnName = restartMatch[1];
+      const tableName = restartMatch[2];
+      const conditionKey = restartMatch[3];
+      const conditionValue = restartMatch[4];
+      const row = this.getRowByCondition(tableName, columnName, conditionKey, conditionValue);
+      if (row) await this.restartDockerContainer(row[columnName]);
+    } else if (removeMatch) {
+      const columnName = removeMatch[1];
+      const tableName = removeMatch[2];
+      const conditionKey = removeMatch[3];
+      const conditionValue = removeMatch[4];
+      const row = this.getRowByCondition(tableName, columnName, conditionKey, conditionValue);
+      if (row) await this.removeDockerContainer(row[columnName]);
+    } else if (dropTableMatch) {
+      const tableName = dropTableMatch[1];
+      await this.dropTable(tableName);
+    } else {
+      console.log('Invalid query.');
+    }
+  }
+
+  // Docker start operation (replaces launch)
+  startDocker(tableName: string, columnName: string, condition: { key: string, value: string | number }) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
     if (table && rows) {
-      let selectedColumns;
+      const rowToStart = rows.find(row => row[condition.key] == condition.value);
+      if (rowToStart && rowToStart[columnName]) {
+        const dockerConfigPath = rowToStart[columnName].replace(/'/g, "");
+        console.log(`Starting Docker for config file: ${dockerConfigPath}...`);
+        launchDockerFromFile(dockerConfigPath);
+      } else {
+        console.log(`No matching row found for ${condition.key} = '${condition.value}'`);
+      }
+    } else {
+      console.log(`Table ${tableName} or column ${columnName} doesn't exist.`);
+    }
+  }
 
-      if (columnsToSelect.length === 1 && columnsToSelect[0] === "*") {
-        selectedColumns = table.map((col) => col.name);
+  async selectData(tableName: string, columnsToSelect: string[], whereCondition?: { key: string, value: string | number }) {
+    const table = this.tables[tableName];
+    const rows = this.data[tableName];
+  
+    if (table && rows) {
+      let selectedColumns;
+  
+      if (columnsToSelect.length === 1 && columnsToSelect[0] === '*') {
+        selectedColumns = table.map(col => col.name);
       } else {
         selectedColumns = columnsToSelect;
       }
-
+  
       let filteredRows = rows;
-
+  
       if (whereCondition) {
-        filteredRows = rows.filter(
-          (row) => row[whereCondition.key] == whereCondition.value
-        );
+        filteredRows = rows.filter(row => row[whereCondition.key] == whereCondition.value);
       }
-
+  
       const cliTable = new Table({
-        head: selectedColumns.map((col) => {
-          if (col.includes("metadata(")) {
-            const property = col.match(/metadata\((.*?)\)\.(.+)/);
-            return property
-              ? `${property[1]}.metadata.${property[2]}`
-              : `${col.replace("metadata(", "").replace(")", "")}.metadata`;
-          } else if (col.includes("run_cmd(")) {
-            const dockerColName = col.split(".")[0];
-            const property = col.match(/run_cmd\((.*?)\)\.(.+)/);
-            return property
-              ? `${dockerColName}.run_cmd.${property[2]}`
-              : `${dockerColName}.run_cmd`;
-          } else {
-            return col;
-          }
-        }),
-        colWidths: selectedColumns.map((col) =>
-          col.includes("metadata(") || col.includes("run_cmd(") ? 50 : 20
-        ), // Adjusted width for metadata/run_cmd columns
+        head: selectedColumns,
+        colWidths: selectedColumns.map(() => 20),
         wordWrap: true,
       });
-
+  
       for (const row of filteredRows) {
         const rowData: string[] = [];
-
+  
         for (const col of selectedColumns) {
-          if (col.includes("metadata(")) {
-            const propertyMatch = col.match(/metadata\((.*?)\)\.(.+)/);
-            const colName = propertyMatch
-              ? propertyMatch[1]
-              : col.replace("metadata(", "").replace(")", "");
-            const property = propertyMatch ? propertyMatch[2] : null;
-            const dockerColumn = table.find(
-              (c) => c.name === colName && c.type.toUpperCase() === "DOCKER"
-            );
+          if (col.includes('metadata(')) {
+            const metadataMatch = col.match(/metadata\((.*?)\)\.?(.*)?/);
+            const dockerColName = metadataMatch ? metadataMatch[1] : col;
+            const metadataProperty = metadataMatch && metadataMatch[2] ? metadataMatch[2] : undefined;  // Handle null or empty string
+            const dockerColumn = table.find(c => c.name === dockerColName && c.type.toUpperCase() === "DOCKER");
+  
             if (dockerColumn) {
-              // Handle special metadata cases for cpuUsage, lastStarted, name, status, port
-              const metadata = await this.getDockerMetadata(
-                row[colName],
-                property?.toLowerCase()
-              ); // Pass property as lowercase
-              rowData.push(
-                metadata !== undefined
-                  ? JSON.stringify(metadata, null, 2)
-                  : "Property not found"
-              );
-            } else {
-              rowData.push("Invalid Docker column");
-            }
-          } else if (col.includes("run_cmd(")) {
-            const match = col.match(/run_cmd\((.*?)\)\.(.+)/);
-            const commandMatch = col.match(/run_cmd\("(.+)"\)/);
-            const dockerColName = col.split(".")[0];
-            const dockerColumn = table.find(
-              (c) =>
-                c.name === dockerColName && c.type.toUpperCase() === "DOCKER"
-            );
-            if (dockerColumn && commandMatch) {
-              const command = commandMatch[1];
-              const result = await this.runCommandInDocker(
-                row[dockerColName],
-                command
-              );
-              if (match) {
-                const jsonResult = this.extractJsonFromString(result || "{}"); // Extract JSON from result
-                const property = match[2];
-                const propertyValue = jsonResult
-                  ? this.getNestedProperty(jsonResult, property)
-                  : null;
-                rowData.push(
-                  propertyValue !== undefined
-                    ? JSON.stringify(propertyValue, null, 2)
-                    : "Property not found"
-                );
+              const metadata = await this.getDockerMetadata(row[dockerColName], metadataProperty);
+              if (metadataProperty) {
+                rowData.push(metadata ? String(metadata) : "Property not found");
               } else {
-                rowData.push(result || "No result");
+                rowData.push(metadata ? JSON.stringify(metadata, null, 2) : "No metadata");
               }
             } else {
               rowData.push("Invalid Docker column");
@@ -262,16 +324,18 @@ export class SQLEngine {
             rowData.push(String(row[col]));
           }
         }
-
+  
         cliTable.push(rowData);
       }
-
+  
       console.log(cliTable.toString());
       return filteredRows;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
     }
   }
+  
+  
 
   async dropTable(tableName: string) {
     if (this.tables[tableName]) {
@@ -299,14 +363,11 @@ export class SQLEngine {
 
     for (const row of rows) {
       for (const col of table) {
-        if (col.type.toUpperCase() === "DOCKER") {
+        if (col.type.toUpperCase() === 'DOCKER') {
           const dockerConfigPath = row[col.name];
           try {
-            const dockerConfig = JSON.parse(
-              fs.readFileSync(dockerConfigPath, "utf8")
-            );
-            const containerName =
-              dockerConfig.name || dockerConfig.container_id;
+            const dockerConfig = JSON.parse(fs.readFileSync(dockerConfigPath, 'utf8'));
+            const containerName = dockerConfig.name || dockerConfig.container_id;
             if (!containerName) continue;
 
             const container = docker.getContainer(containerName);
@@ -314,97 +375,10 @@ export class SQLEngine {
             await container.remove();
             console.log(`Container ${containerName} stopped and removed.`);
           } catch (error) {
-            console.error(
-              `Error stopping or removing Docker container ${dockerConfigPath}:`,
-              error
-            );
+            console.error(`Error stopping or removing Docker container ${dockerConfigPath}:`, error);
           }
         }
       }
-    }
-  }
-
-  launchDocker(
-    tableName: string,
-    columnName: string,
-    condition: { key: string; value: string | number }
-  ) {
-    const table = this.tables[tableName];
-    const rows = this.data[tableName];
-
-    if (table && rows) {
-      const rowToLaunch = rows.find(
-        (row) => row[condition.key] == condition.value
-      );
-      if (rowToLaunch && rowToLaunch[columnName]) {
-        const dockerConfigPath = rowToLaunch[columnName].replace(/'/g, "");
-        console.log(`Launching Docker for config file: ${dockerConfigPath}...`);
-        launchDockerFromFile(dockerConfigPath);
-      } else {
-        console.log(
-          `No matching row found for ${condition.key} = '${condition.value}'`
-        );
-      }
-    } else {
-      console.log(`Table ${tableName} or column ${columnName} doesn't exist.`);
-    }
-  }
-
-  async parseQuery(query: string) {
-    const lowerCaseQuery = query.toLowerCase().trim();
-    const createTableRegex = /create table (\w+) \((.+)\)/;
-    const insertRegex = /insert into (\w+) \((.+)\)/;
-    const selectRegex = /select (.+) from (\w+)/;
-    const whereRegex = /where (\w+) = ['"]?(.+?)['"]?/;
-    const launchRegex = /launch (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
-    const dropTableRegex = /drop table (\w+)/;
-
-    const createTableMatch = lowerCaseQuery.match(createTableRegex);
-    const insertMatch = lowerCaseQuery.match(insertRegex);
-    const selectMatch = lowerCaseQuery.match(selectRegex);
-    const whereMatch = lowerCaseQuery.match(whereRegex);
-    const launchMatch = lowerCaseQuery.match(launchRegex);
-    const dropTableMatch = lowerCaseQuery.match(dropTableRegex);
-
-    if (createTableMatch) {
-      const tableName = createTableMatch[1];
-      const columns = createTableMatch[2].split(",").map((col) => {
-        const [name, type] = col.trim().split(" ");
-        return { name, type: type.toUpperCase() };
-      });
-      this.createTable(tableName, columns);
-    } else if (insertMatch) {
-      const tableName = insertMatch[1];
-      const values = insertMatch[2].split(",").map((val) => val.trim());
-      this.insertData(tableName, values);
-    } else if (selectMatch) {
-      const columns = selectMatch[1].split(",").map((col) => col.trim());
-      const tableName = selectMatch[2];
-
-      if (whereMatch) {
-        const whereKey = whereMatch[1];
-        const whereValue = whereMatch[2];
-        await this.selectData(tableName, columns, {
-          key: whereKey,
-          value: whereValue,
-        });
-      } else {
-        await this.selectData(tableName, columns);
-      }
-    } else if (launchMatch) {
-      const columnName = launchMatch[1];
-      const tableName = launchMatch[2];
-      const conditionKey = launchMatch[3];
-      const conditionValue = launchMatch[4];
-      this.launchDocker(tableName, columnName, {
-        key: conditionKey,
-        value: conditionValue,
-      });
-    } else if (dropTableMatch) {
-      const tableName = dropTableMatch[1];
-      await this.dropTable(tableName);
-    } else {
-      console.log("Invalid query.");
     }
   }
 }
