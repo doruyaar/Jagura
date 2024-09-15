@@ -89,7 +89,7 @@ export class SQLEngine {
     }
   }
 
-  // Docker Container Operations (Stop, Kill, Restart, Remove)
+  // Docker Container Operations (Stop, Kill, Remove)
   async stopDockerContainer(configPath: string): Promise<void> {
     try {
       const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -119,22 +119,6 @@ export class SQLEngine {
       console.log(`Container ${containerName} killed.`);
     } catch (error) {
       console.error(`Error killing Docker container ${configPath}:`, error);
-    }
-  }
-
-  async restartDockerContainer(configPath: string): Promise<void> {
-    try {
-      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      const containerName = dockerConfig.name || dockerConfig.container_id;
-      if (!containerName) {
-        throw new Error('Container name or ID not found in the config.');
-      }
-
-      const container = docker.getContainer(containerName);
-      await container.restart();
-      console.log(`Container ${containerName} restarted.`);
-    } catch (error) {
-      console.error(`Error restarting Docker container ${configPath}:`, error);
     }
   }
 
@@ -175,7 +159,6 @@ export class SQLEngine {
     const startRegex = /start (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
     const stopRegex = /stop (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
     const killRegex = /kill (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
-    const restartRegex = /restart (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
     const removeRegex = /remove (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
     const dropTableRegex = /drop table (\w+)/;
 
@@ -186,7 +169,6 @@ export class SQLEngine {
     const startMatch = lowerCaseQuery.match(startRegex);
     const stopMatch = lowerCaseQuery.match(stopRegex);
     const killMatch = lowerCaseQuery.match(killRegex);
-    const restartMatch = lowerCaseQuery.match(restartRegex);
     const removeMatch = lowerCaseQuery.match(removeRegex);
     const dropTableMatch = lowerCaseQuery.match(dropTableRegex);
 
@@ -234,13 +216,6 @@ export class SQLEngine {
       const conditionValue = killMatch[4];
       const row = this.getRowByCondition(tableName, columnName, conditionKey, conditionValue);
       if (row) await this.killDockerContainer(row[columnName]);
-    } else if (restartMatch) {
-      const columnName = restartMatch[1];
-      const tableName = restartMatch[2];
-      const conditionKey = restartMatch[3];
-      const conditionValue = restartMatch[4];
-      const row = this.getRowByCondition(tableName, columnName, conditionKey, conditionValue);
-      if (row) await this.restartDockerContainer(row[columnName]);
     } else if (removeMatch) {
       const columnName = removeMatch[1];
       const tableName = removeMatch[2];
