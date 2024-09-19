@@ -85,5 +85,8 @@
         "button.foreground": "#f1ebe8",
         "badge.background": "#8b2f2f",
         "badge.foreground": "#f1ebe8"
-    }
+    },
+    "cSpell.words": [
+        "dockerode"
+    ]
 }
