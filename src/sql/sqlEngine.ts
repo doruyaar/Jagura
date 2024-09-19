@@ -1,99 +1,38 @@
 import Docker from "dockerode";
-import { launchDockerFromFile } from "../docker/dockerManager";
+import { getContainerMetadata, launchContainerFromFile } from "../container/containerManager";
 import Table from "cli-table3";
 import fs from "node:fs";
+import { Column, extractJsonFromString, getNestedProperty, trimQuotes } from "./lib";
 
 const docker = new Docker();
-
-type Column = { name: string; type: string };
-
 export class SQLEngine {
   private tables: { [tableName: string]: Column[] } = {};
   private data: { [tableName: string]: any[] } = {};
 
   createTable(tableName: string, columns: Column[]) {
+    if (Object.keys(this.tables).includes(tableName)) {
+      console.log(`Table with name ${tableName} already exists`);
+      return;
+    }
     this.tables[tableName] = columns;
     this.data[tableName] = [];
     console.log(`Table ${tableName} created with columns:`, columns);
-  }
-
-  cleanValue(value: string): string {
-    return value.replace(/^['"](.+)['"]$/, "$1");
   }
 
   insertData(tableName: string, values: any[]) {
     const table = this.tables[tableName];
     if (table) {
       const rowData: any = {};
-      table.forEach((col, index) => {
-        rowData[col.name] = this.cleanValue(values[index]);
-      });
+      for (let index = 0; index < table.length; index++) {
+        const col = table[index];
+        rowData[col.name] = trimQuotes(values[index]);
+      }
       this.data[tableName].push(rowData);
       console.log(`Inserted into ${tableName}:`, rowData);
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
     }
   }
-
-  // Utility to safely access nested properties, with exact casing
-  getNestedProperty(obj: any, path: string) {
-    return path.split(".").reduce((prev, curr) => prev && prev[curr], obj);
-  }
-
-  async getDockerMetadata(configPath: string, queryProperty?: string): Promise<any> {
-    try {
-      const dockerConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      const containerName = dockerConfig.name || dockerConfig.container_id;
-      if (!containerName) {
-        throw new Error('Container name or ID not found in the config.');
-      }
-  
-      const container = docker.getContainer(containerName);
-      const inspectData = await container.inspect();
-      const stats = await container.stats({ stream: false });
-  
-      // Create a full metadata object
-      const metadata = {
-        name: inspectData.Name,
-        status: inspectData.State.Status,
-        port: inspectData.NetworkSettings.Ports,
-        cpuUsage: stats.cpu_stats?.cpu_usage?.total_usage ?? 'N/A',  // Use the checked cpuUsage value
-        lastStarted: inspectData?.State?.StartedAt ?? 'N/A',         // Use the checked lastStarted value
-      };
-  
-      // Define the valid keys for metadata
-      type MetadataKey = keyof typeof metadata;
-  
-      // Mapping for lowercase queryProperty to camelCase metadata fields
-      const metadataMapping: { [key: string]: MetadataKey } = {
-        'name': 'name',
-        'status': 'status',
-        'port': 'port',
-        'cpuusage': 'cpuUsage',
-        'laststarted': 'lastStarted',
-      };
-  
-      // If a specific property is requested (e.g., 'name', 'status', 'port', 'cpuUsage', 'lastStarted')
-      if (queryProperty) {
-        const lowerCaseQuery = queryProperty.toLowerCase();
-  
-        // Check if lowerCaseQuery is a valid key in metadataMapping
-        if (lowerCaseQuery in metadataMapping) {
-          const camelCaseKey = metadataMapping[lowerCaseQuery]; // Get the corresponding camelCase key
-          return metadata[camelCaseKey]; // Return the specific metadata property
-        } else {
-          return 'Property not found'; // Return if the property doesn't exist
-        }
-      }
-  
-      // If no specific property requested, return the full metadata object
-      return metadata;
-    } catch (error) {
-      console.error(`Error fetching metadata for container ${configPath}:`, error);
-      return null;
-    }
-  }
-  
 
   async runCommandInDocker(
     configPath: string,
@@ -136,20 +75,6 @@ export class SQLEngine {
       );
       return "Error running command in Docker container";
     }
-  }
-
-  extractJsonFromString(str: string): any {
-    const jsonStart = str.indexOf("{");
-    const jsonEnd = str.lastIndexOf("}");
-    if (jsonStart !== -1 && jsonEnd !== -1) {
-      try {
-        const jsonString = str.substring(jsonStart, jsonEnd + 1);
-        return JSON.parse(jsonString);
-      } catch (error) {
-        return null;
-      }
-    }
-    return null;
   }
 
   async selectData(
@@ -215,7 +140,7 @@ export class SQLEngine {
             );
             if (dockerColumn) {
               // Handle special metadata cases for cpuUsage, lastStarted, name, status, port
-              const metadata = await this.getDockerMetadata(
+              const metadata = await getContainerMetadata(
                 row[colName],
                 property?.toLowerCase()
               ); // Pass property as lowercase
@@ -242,10 +167,10 @@ export class SQLEngine {
                 command
               );
               if (match) {
-                const jsonResult = this.extractJsonFromString(result || "{}"); // Extract JSON from result
+                const jsonResult = extractJsonFromString(result || "{}"); // Extract JSON from result
                 const property = match[2];
                 const propertyValue = jsonResult
-                  ? this.getNestedProperty(jsonResult, property)
+                  ? getNestedProperty(jsonResult, property)
                   : null;
                 rowData.push(
                   propertyValue !== undefined
@@ -339,7 +264,7 @@ export class SQLEngine {
       if (rowToLaunch && rowToLaunch[columnName]) {
         const dockerConfigPath = rowToLaunch[columnName].replace(/'/g, "");
         console.log(`Launching Docker for config file: ${dockerConfigPath}...`);
-        launchDockerFromFile(dockerConfigPath);
+        launchContainerFromFile(dockerConfigPath);
       } else {
         console.log(
           `No matching row found for ${condition.key} = '${condition.value}'`

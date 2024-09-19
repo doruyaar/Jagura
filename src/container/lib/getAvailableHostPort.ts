@@ -1,8 +1,6 @@
 import { ContainerInfo } from "dockerode";
-import { isPortTaken } from "./index";
 
-
-export const getAvailableHostPort = (containers: Array<ContainerInfo>, config: any) => {
+export const getAvailableHostPort = (containers: Array<ContainerInfo>, config: Record<string, any>) => {
   let hostPort = parseInt(config.hostConfig?.PortBindings?.["80/tcp"]?.[0]?.HostPort || '0');
 
   if(!hostPort) {
@@ -23,3 +21,10 @@ export const getAvailableHostPort = (containers: Array<ContainerInfo>, config: a
     }
   }
 }
+
+function isPortTaken (containers: Array<ContainerInfo>, port: number) {
+  return containers.some(container => {
+    const ports = container.Ports || [];
+    return ports.some(p => p.PublicPort === port);
+  });
+};
