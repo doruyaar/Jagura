@@ -6,7 +6,7 @@ import {
 } from "./lib";
 
 export class ContainerUtil {
-  private container: Container;
+  private container: Container = {} as Container;
   private config: Record<string, any>;
   private identifier: string;
 
@@ -17,6 +17,7 @@ export class ContainerUtil {
 
   async start() {
     this.container = await createContainer(this.config);
+    await this.container.start()
   }
 
   async remove() {
