@@ -1,7 +1,8 @@
 import Docker from "dockerode";
 import { getContainerMetadata, launchContainerFromFile, runCommandInContainer, stopContainerByConfigFile } from "../container/containerManager";
 import Table from "cli-table3";
-import { Column, extractJsonFromString, getNestedProperty, trimQuotes } from "./lib";
+import { Column, extractJsonFromString, extractMetadataSelect, extractRunCmdSelect, getMetadataColTitle, getNestedProperty, trimQuotes } from "./lib";
+import { getColsTitles } from "./lib/getColsTitles";
 
 const docker = new Docker();
 export class SQLEngine {
@@ -41,43 +42,23 @@ export class SQLEngine {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
+    const isSelectAllColumns = columnsToSelect.length === 1 && columnsToSelect[0] === "*";
+
     if (table && rows) {
-      let selectedColumns;
+      const selectedColumns = isSelectAllColumns ? table.map((col) => col.name) : columnsToSelect;
+      const filteredRows = whereCondition ? rows.filter(
+        (row) => row[whereCondition.key] == whereCondition.value
+      ): rows;
 
-      if (columnsToSelect.length === 1 && columnsToSelect[0] === "*") {
-        selectedColumns = table.map((col) => col.name);
-      } else {
-        selectedColumns = columnsToSelect;
-      }
 
-      let filteredRows = rows;
-
-      if (whereCondition) {
-        filteredRows = rows.filter(
-          (row) => row[whereCondition.key] == whereCondition.value
-        );
-      }
+      const getColsTitlesWidth = (selectedColumns: Array<string>) => 
+        selectedColumns.map((col) =>
+          col.includes("metadata(") || col.includes("run_cmd(") ? 50 : 20
+        )
 
       const cliTable = new Table({
-        head: selectedColumns.map((col) => {
-          if (col.includes("metadata(")) {
-            const property = col.match(/metadata\((.*?)\)\.(.+)/);
-            return property
-              ? `${property[1]}.metadata.${property[2]}`
-              : `${col.replace("metadata(", "").replace(")", "")}.metadata`;
-          } else if (col.includes("run_cmd(")) {
-            const dockerColName = col.split(".")[0];
-            const property = col.match(/run_cmd\((.*?)\)\.(.+)/);
-            return property
-              ? `${dockerColName}.run_cmd.${property[2]}`
-              : `${dockerColName}.run_cmd`;
-          } else {
-            return col;
-          }
-        }),
-        colWidths: selectedColumns.map((col) =>
-          col.includes("metadata(") || col.includes("run_cmd(") ? 50 : 20
-        ), // Adjusted width for metadata/run_cmd columns
+        head: getColsTitles(selectedColumns),
+        colWidths: getColsTitlesWidth(selectedColumns),
         wordWrap: true,
       });
 
@@ -86,47 +67,38 @@ export class SQLEngine {
 
         for (const col of selectedColumns) {
           if (col.includes("metadata(")) {
-            const propertyMatch = col.match(/metadata\((.*?)\)\.(.+)/);
-            const colName = propertyMatch
-              ? propertyMatch[1]
-              : col.replace("metadata(", "").replace(")", "");
-            const property = propertyMatch ? propertyMatch[2] : null;
-            const dockerColumn = table.find(
-              (c) => c.name === colName && c.type.toUpperCase() === "DOCKER"
+            const { containerCol, field } = extractMetadataSelect(col);
+            const isTableContainContainerCol = table.find(
+              (c) => c.name === containerCol && c.type.toUpperCase() === "DOCKER"
             );
-            if (dockerColumn) {
-              // Handle special metadata cases for cpuUsage, lastStarted, name, status, port
+            if (isTableContainContainerCol) {
               const metadata = await getContainerMetadata(
-                row[colName],
-                property?.toLowerCase()
-              ); // Pass property as lowercase
+                row[containerCol],
+                field?.toLowerCase()
+              );
               rowData.push(
                 metadata !== undefined
                   ? JSON.stringify(metadata, null, 2)
                   : "Property not found"
               );
             } else {
-              rowData.push("Invalid Docker column");
+              rowData.push("Invalid Container column");
             }
           } else if (col.includes("run_cmd(")) {
-            const match = col.match(/run_cmd\((.*?)\)\.(.+)/);
-            const commandMatch = col.match(/run_cmd\("(.+)"\)/);
-            const dockerColName = col.split(".")[0];
-            const dockerColumn = table.find(
+            const {command, containerCol, nestedField} = extractRunCmdSelect(col);
+            const isTableContainContainerCol = table.find(
               (c) =>
-                c.name === dockerColName && c.type.toUpperCase() === "DOCKER"
+                c.name === containerCol && c.type.toUpperCase() === "DOCKER"
             );
-            if (dockerColumn && commandMatch) {
-              const command = commandMatch[1];
+            if (isTableContainContainerCol && command) {
               const result = await runCommandInContainer(
-                row[dockerColName],
+                row[containerCol],
                 command
               );
-              if (match) {
-                const jsonResult = extractJsonFromString(result || "{}"); // Extract JSON from result
-                const property = match[2];
+              if (nestedField) {
+                const jsonResult = extractJsonFromString(result || "{}");
                 const propertyValue = jsonResult
-                  ? getNestedProperty(jsonResult, property)
+                  ? getNestedProperty(jsonResult, nestedField)
                   : null;
                 rowData.push(
                   propertyValue !== undefined
@@ -156,13 +128,9 @@ export class SQLEngine {
 
   async dropTable(tableName: string) {
     if (this.tables[tableName]) {
-      // Stop and remove Docker containers
       await this.stopAndRemoveContainers(tableName);
-
-      // Delete the table and its records
       delete this.tables[tableName];
       delete this.data[tableName];
-
       console.log(`Table ${tableName} and its records have been dropped.`);
     } else {
       console.log(`Table ${tableName} does not exist.`);
@@ -188,7 +156,7 @@ export class SQLEngine {
     }
   }
 
-  launchDocker(
+  launchContainer(
     tableName: string,
     columnName: string,
     condition: { key: string; value: string | number }
@@ -201,9 +169,8 @@ export class SQLEngine {
         (row) => row[condition.key] == condition.value
       );
       if (rowToLaunch && rowToLaunch[columnName]) {
-        const dockerConfigPath = rowToLaunch[columnName].replace(/'/g, "");
-        console.log(`Launching Docker for config file: ${dockerConfigPath}...`);
-        launchContainerFromFile(dockerConfigPath);
+        const containerConfigPath = rowToLaunch[columnName].replace(/'/g, "");
+        launchContainerFromFile(containerConfigPath);
       } else {
         console.log(
           `No matching row found for ${condition.key} = '${condition.value}'`
@@ -260,7 +227,7 @@ export class SQLEngine {
       const tableName = launchMatch[2];
       const conditionKey = launchMatch[3];
       const conditionValue = launchMatch[4];
-      this.launchDocker(tableName, columnName, {
+      this.launchContainer(tableName, columnName, {
         key: conditionKey,
         value: conditionValue,
       });

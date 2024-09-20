@@ -8,7 +8,7 @@ const metadataMapping: { [key: string]: MetadataKey } = {
   "laststarted": "lastStarted",
 };
 
-export const getMetadataField = (metadata: Record<string, any>, queryProperty: string) => {  
+export const extractMetadataField = (metadata: Record<string, any>, queryProperty: string) => {  
   const lowerCaseQuery = queryProperty.toLowerCase();
   if (lowerCaseQuery in metadataMapping) {
     const camelCaseKey = metadataMapping[lowerCaseQuery];

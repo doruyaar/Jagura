@@ -1,9 +1,10 @@
-import { createContainer, execCmdInContainer, getContainerConfigFormFile, getContainerFromConfig, getContainerInfo, getMetadataField } from './lib';
+import { createContainer, execCmdInContainer, getContainerConfigFormFile, getContainerFromConfig, getContainerInfo, extractMetadataField } from './lib';
 
 export const launchContainerFromFile = async (configPath: string) => {
   try {
     const config = getContainerConfigFormFile(configPath);
     const container = await createContainer(config)
+    console.log(`Launching Container: ${config.name}...`);
     await container.start();
     console.log(`Container ${config.name} started with image ${config.image}.`);
   } catch (error) {
@@ -17,7 +18,7 @@ export const getContainerMetadata = async (configPath: string, queryProperty?: s
     
     const metadata = await getContainerInfo(config);
     if (queryProperty) {
-      return getMetadataField(metadata, queryProperty);
+      return extractMetadataField(metadata, queryProperty);
     }
 
     return metadata;
