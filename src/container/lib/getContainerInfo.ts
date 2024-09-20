@@ -2,8 +2,9 @@ import Docker from 'dockerode';
 
 const docker = new Docker();
 
-export const getContainerInfo = async (containerName: string) => {
-  const container = docker.getContainer(containerName);
+export const getContainerInfo = async (config: Record<string, any>) => {
+  const containerIdentifier = config.name || config.container_id;
+  const container = docker.getContainer(containerIdentifier);
   const inspectData = await container.inspect();
   const stats = await container.stats({ stream: false });
 

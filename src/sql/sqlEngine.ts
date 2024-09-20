@@ -1,7 +1,6 @@
 import Docker from "dockerode";
-import { getContainerMetadata, launchContainerFromFile } from "../container/containerManager";
+import { getContainerMetadata, launchContainerFromFile, runCommandInContainer, stopContainerByConfigFile } from "../container/containerManager";
 import Table from "cli-table3";
-import fs from "node:fs";
 import { Column, extractJsonFromString, getNestedProperty, trimQuotes } from "./lib";
 
 const docker = new Docker();
@@ -31,49 +30,6 @@ export class SQLEngine {
       console.log(`Inserted into ${tableName}:`, rowData);
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
-    }
-  }
-
-  async runCommandInDocker(
-    configPath: string,
-    command: string
-  ): Promise<string> {
-    try {
-      const dockerConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-      const containerName = dockerConfig.name || dockerConfig.container_id;
-      if (!containerName) {
-        throw new Error("Container name or ID not found in the config.");
-      }
-
-      const container = docker.getContainer(containerName);
-      const exec = await container.exec({
-        Cmd: ["sh", "-c", command],
-        AttachStdout: true,
-        AttachStderr: true,
-      });
-
-      const stream = await exec.start({});
-
-      return new Promise((resolve, reject) => {
-        let output = "";
-        stream.on("data", (data) => {
-          output += data.toString();
-        });
-
-        stream.on("end", () => {
-          resolve(output.trim());
-        });
-
-        stream.on("error", (err) => {
-          reject(err);
-        });
-      });
-    } catch (error) {
-      console.error(
-        `Error running command in Docker container ${configPath}:`,
-        error
-      );
-      return "Error running command in Docker container";
     }
   }
 
@@ -162,7 +118,7 @@ export class SQLEngine {
             );
             if (dockerColumn && commandMatch) {
               const command = commandMatch[1];
-              const result = await this.runCommandInDocker(
+              const result = await runCommandInContainer(
                 row[dockerColName],
                 command
               );
@@ -201,7 +157,7 @@ export class SQLEngine {
   async dropTable(tableName: string) {
     if (this.tables[tableName]) {
       // Stop and remove Docker containers
-      await this.stopAndRemoveDockerContainers(tableName);
+      await this.stopAndRemoveContainers(tableName);
 
       // Delete the table and its records
       delete this.tables[tableName];
@@ -213,7 +169,7 @@ export class SQLEngine {
     }
   }
 
-  async stopAndRemoveDockerContainers(tableName: string) {
+  async stopAndRemoveContainers(tableName: string) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
@@ -226,24 +182,7 @@ export class SQLEngine {
       for (const col of table) {
         if (col.type.toUpperCase() === "DOCKER") {
           const dockerConfigPath = row[col.name];
-          try {
-            const dockerConfig = JSON.parse(
-              fs.readFileSync(dockerConfigPath, "utf8")
-            );
-            const containerName =
-              dockerConfig.name || dockerConfig.container_id;
-            if (!containerName) continue;
-
-            const container = docker.getContainer(containerName);
-            await container.stop();
-            await container.remove();
-            console.log(`Container ${containerName} stopped and removed.`);
-          } catch (error) {
-            console.error(
-              `Error stopping or removing Docker container ${dockerConfigPath}:`,
-              error
-            );
-          }
+          stopContainerByConfigFile(dockerConfigPath);
         }
       }
     }

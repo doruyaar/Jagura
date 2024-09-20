@@ -1,4 +1,4 @@
-import { createContainer, getContainerConfigFormFile, getContainerInfo, getMetadataField } from './lib';
+import { createContainer, execCmdInContainer, getContainerConfigFormFile, getContainerFromConfig, getContainerInfo, getMetadataField } from './lib';
 
 export const launchContainerFromFile = async (configPath: string) => {
   try {
@@ -14,14 +14,8 @@ export const launchContainerFromFile = async (configPath: string) => {
 export const getContainerMetadata = async (configPath: string, queryProperty?: string): Promise<any> => {
   try {
     const config = getContainerConfigFormFile(configPath);
-
-    const containerName = config.name || config.container_id;
-    if (!containerName) {
-      console.error('Container name or ID not found in the config.');
-      return;
-    }
-
-    const metadata = await getContainerInfo(containerName);
+    
+    const metadata = await getContainerInfo(config);
     if (queryProperty) {
       return getMetadataField(metadata, queryProperty);
     }
@@ -29,5 +23,35 @@ export const getContainerMetadata = async (configPath: string, queryProperty?: s
     return metadata;
   } catch (error) {
     console.error(`Error fetching metadata for container ${configPath}`);
+  }
+}
+
+export const runCommandInContainer = async (
+  configPath: string,
+  command: string
+): Promise<string> => {
+  try {
+    const config = getContainerConfigFormFile(configPath);
+    const container = getContainerFromConfig(config);
+    return await execCmdInContainer(container, command)
+  } catch (error) {
+    console.error(
+      `Error running command in Docker container ${configPath}:`
+    );
+    return "Error running command in Docker container";
+  }
+}
+
+export const stopContainerByConfigFile = async (configPath: string) => {
+  try {
+    const config = getContainerConfigFormFile(configPath);
+    const container = getContainerFromConfig(config);
+    await container.stop();
+    await container.remove();
+    console.log(`Container ${config.name} stopped and removed.`);
+  } catch (error) {
+    console.error(
+      `Error stopping or removing Docker container ${configPath}`
+    );
   }
 }
