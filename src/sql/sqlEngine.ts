@@ -1,7 +1,6 @@
 import Docker from "dockerode";
-import { getContainerMetadata, launchContainerFromFile, runCommandInContainer, stopContainerByConfigFile } from "../container/containerManager";
 import Table from "cli-table3";
-import { Column, extractJsonFromString, extractMetadataSelect, extractRunCmdSelect, getMetadataColTitle, getNestedProperty, trimQuotes } from "./lib";
+import { Column, extractJsonFromString, extractMetadataSelect, extractRunCmdSelect, getNestedProperty, parseColumns, trimQuotes } from "./lib";
 import { getColsTitles } from "./lib/getColsTitles";
 import { ContainerUtil } from "../container/ContainerUtil";
 
@@ -91,7 +90,7 @@ export class SQLEngine {
             );
             if (isTableContainContainerCol) {
               const container: ContainerUtil = row[containerCol];
-              const metadata = container.getMetadata(field?.toLowerCase());
+              const metadata = await container.getMetadata(field?.toLowerCase());
               const value = metadata ? JSON.stringify(metadata, null, 2) : "Property not found"
               rowData.push(value);
             } else {
@@ -161,8 +160,8 @@ export class SQLEngine {
     for (const row of rows) {
       for (const col of table) {
         if (col.type.toUpperCase() === "DOCKER") {
-          const dockerConfigPath = row[col.name];
-          stopContainerByConfigFile(dockerConfigPath);
+          const container: ContainerUtil = row[col.name];
+          await container.remove()
         }
       }
     }
@@ -183,8 +182,6 @@ export class SQLEngine {
       if (rowToLaunch && rowToLaunch[columnName]) {
         const container: ContainerUtil = rowToLaunch[columnName];
         await container.start();
-        // const containerConfigPath = rowToLaunch[columnName].replace(/'/g, "");
-        // launchContainerFromFile(containerConfigPath);
       } else {
         console.log(
           `No matching row found for ${condition.key} = '${condition.value}'`
@@ -223,7 +220,7 @@ export class SQLEngine {
       const values = insertMatch[2].split(",").map((val) => val.trim());
       this.insertData(tableName, values);
     } else if (selectMatch) {
-      const columns = selectMatch[1].split(",").map((col) => col.trim());
+      const columns = parseColumns(selectMatch[1]);
       const tableName = selectMatch[2];
 
       if (whereMatch) {

@@ -1,0 +1,17 @@
+{
+  "image": "mongo",
+  "name": "mongodb-container",
+  "command": [],
+  "exposedPorts": {
+    "27017/tcp": {}
+  },
+  "hostConfig": {
+    "PortBindings": {
+      "27017/tcp": [
+        {
+          "HostPort": "27017"
+        }
+      ]
+    }
+  }
+}

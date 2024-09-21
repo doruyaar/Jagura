@@ -3,10 +3,11 @@ import {
   createContainer,
   getContainerConfigFormFile,
   extractMetadataField,
+  handleMongoCommand,
 } from "./lib";
 
 export class ContainerUtil {
-  private container: Container = {} as Container;
+  private container: Container | undefined;
   private config: Record<string, any>;
   private identifier: string;
 
@@ -16,11 +17,19 @@ export class ContainerUtil {
   }
 
   async start() {
+    if (this.container) {
+      return;
+    }
+
     this.container = await createContainer(this.config);
     await this.container.start()
   }
 
   async remove() {
+    if (!this.container) {
+      return;
+    }
+
     try {
       await this.container.stop();
       await this.container.remove();
@@ -35,7 +44,7 @@ export class ContainerUtil {
   async getMetadata(queryProperty?: string) {
     try {
       const metadata = await this.getInfo();
-      if (queryProperty) {
+      if (metadata && queryProperty) {
         return extractMetadataField(metadata, queryProperty);
       }
   
@@ -46,9 +55,19 @@ export class ContainerUtil {
   }
 
   async runCommand(command: string) {
+    if (!this.container) {
+      return;
+    }
+
+    const containerInfo = await this.getInfo()
+    const cmdArray = 
+      containerInfo?.image == "mongo"
+      ? handleMongoCommand(command)
+      : ["sh", "-c", command];
+
     try {
       const exec = await this.container.exec({
-        Cmd: ["sh", "-c", command],
+        Cmd: cmdArray,
         AttachStdout: true,
         AttachStderr: true,
       });
@@ -72,11 +91,16 @@ export class ContainerUtil {
   }
 
   async getInfo() {
+    if (!this.container) {
+      return;
+    }
+
     const inspectData = await this.container.inspect();
     const stats = await this.container.stats({ stream: false });
 
     return {
       name: inspectData.Name,
+      image: inspectData.Config.Image,
       status: inspectData.State.Status,
       port: inspectData.NetworkSettings.Ports,
       cpuUsage: stats.cpu_stats?.cpu_usage?.total_usage ?? "N/A",
