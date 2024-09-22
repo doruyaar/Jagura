@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/doruyaar/paddock#readme",
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/dockerode": "^3.3.31",
     "@types/express": "^4.17.21",
     "dockerode": "^4.0.2",
@@ -29,6 +30,7 @@
   },
   "dependencies": {
     "cli-table3": "^0.6.5",
+    "cors": "^2.8.5",
     "express": "^4.20.0"
   }
 }

@@ -1,18 +1,27 @@
 import express from 'express';
+import cors from 'cors';
 import { SqlUtil } from '../sql/SqlUtil';
 
 const sqlUtil = new SqlUtil();
 
+const BACKEND_PORT = process.env.BACKEND_PORT || 3000;
+const FRONTEND_PORT = process.env.FRONTEND_PORT || 5173;
+
 export function startServer() {
   const app = express();
+
+  app.use(cors({
+    origin: `http://localhost:${FRONTEND_PORT}`,
+    methods: ['POST'],
+    allowedHeaders: ['Content-Type'],
+  }));
   
   app.use(express.json());
 
   app.post('/query', handlePostQuery);
 
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  app.listen(BACKEND_PORT, () => {
+    console.log(`Server is running on port ${BACKEND_PORT}`);
   });
 }
 
