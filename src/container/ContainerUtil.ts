@@ -4,6 +4,7 @@ import {
   getContainerConfigFormFile,
   extractMetadataField,
   handleMongoCommand,
+  extractPort,
 } from "./lib";
 
 export class ContainerUtil {
@@ -23,6 +24,7 @@ export class ContainerUtil {
 
     this.container = await createContainer(this.config);
     await this.container.start()
+    return `launch container ${this.config.name} was successfully executed.`
   }
 
   async remove() {
@@ -62,7 +64,7 @@ export class ContainerUtil {
     const containerInfo = await this.getInfo()
     const cmdArray = 
       containerInfo?.image == "mongo"
-      ? handleMongoCommand(command)
+      ? handleMongoCommand({ command, port: containerInfo.port})
       : ["sh", "-c", command];
 
     try {
@@ -102,7 +104,7 @@ export class ContainerUtil {
       name: inspectData.Name,
       image: inspectData.Config.Image,
       status: inspectData.State.Status,
-      port: inspectData.NetworkSettings.Ports,
+      port: extractPort(inspectData.NetworkSettings.Ports),
       cpuUsage: stats.cpu_stats?.cpu_usage?.total_usage ?? "N/A",
       lastStarted: inspectData?.State?.StartedAt ?? "N/A",
     };

@@ -1,27 +1,17 @@
-import readline from 'readline';
-import { SQLEngine } from './sql/sqlEngine';
+import { startCli } from './cli';
+import { startServer } from './server';
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+const mode = process.env.MODE || 'CLI';
 
-const sqlEngine = new SQLEngine();
+run();
 
-function prompt() {
-  rl.question('', (query) => {
-    // Skip processing if the user presses ENTER without typing anything
-    if (query.trim() === '') {
-      prompt();  // Just reprompt without processing the empty query
-      return;
-    }
-
-    // Process the query if it's not empty
-    sqlEngine.parseQuery(query);
-    prompt();  // Continue prompting after the query is processed
-  });
+function run() {
+  if (mode === 'CLI') {
+    startCli();
+  } else if (mode === 'API') {
+    startServer();
+  } else {
+    console.error(`Unknown mode: ${mode}`);
+    process.exit(1);
+  }
 }
-
-// Show welcome message only once
-console.log('Welcome to paddock-db, Insert your queries:');
-prompt();  // Start listening for queries

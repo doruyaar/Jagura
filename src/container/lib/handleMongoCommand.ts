@@ -1,6 +1,6 @@
-export const handleMongoCommand = (command: string) => {
+export const handleMongoCommand = ({ command, port }: { command: string, port: number }) => {
   if (command.includes('insertone')) {
     command = command.replace("insertone", "insertOne")
   }
-  return ["mongosh", "--host", "localhost", "--port", "27017", "--eval", command]
+  return ["mongosh", "--host", "localhost", "--port", port.toString() , "--eval", command]
 }
