@@ -1,5 +1,5 @@
 import express from 'express';
-import { SqlUtil } from './sql/SqlUtil';
+import { SqlUtil } from '../sql/SqlUtil';
 
 const sqlUtil = new SqlUtil();
 
