@@ -1,5 +1,5 @@
 import readline from 'readline';
-import { SqlUtil } from '../sql/SqlUtil';
+import SqlUtil from '../sql/SqlUtil';
 
 export function startCli() {
   const sqlUtil = new SqlUtil();

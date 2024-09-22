@@ -1,11 +1,12 @@
 import express from 'express';
 import cors from 'cors';
-import { SqlUtil } from '../sql/SqlUtil';
+import SqlUtil from '../sql/SqlUtil';
 
 const sqlUtil = new SqlUtil();
 
 const BACKEND_PORT = process.env.BACKEND_PORT || 3000;
 const FRONTEND_PORT = process.env.FRONTEND_PORT || 5173;
+const MOCK_RESPONSE_DELAY = process.env.MOCK_RESPONSE_DELAY || true;
 
 export function startServer() {
   const app = express();
@@ -33,8 +34,21 @@ async function handlePostQuery(req: express.Request, res: express.Response) {
 
   try {
     const result = await sqlUtil.parseQuery(query);
+    if (MOCK_RESPONSE_DELAY) {
+      await mockResponseDelay();
+    }
     res.json({ result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+}
+
+function mockResponseDelay() {
+  const randomDelay = Math.floor(Math.random() * 400) + 400;
+
+  return new Promise<void>(resolve => {
+    setTimeout(() => {
+      resolve();
+    }, randomDelay);
+  });
 }

@@ -1,12 +1,18 @@
-import Docker from "dockerode";
 import Table from "cli-table3";
-import { Column, extractJsonFromString, extractMetadataSelect, extractRunCmdSelect, getNestedProperty, parseColumns, prepareColsToPrint, trimQuotes } from "./lib";
-import { getColsTitles } from "./lib/getColsTitles";
-import { ContainerUtil } from "../container/ContainerUtil";
+import ContainerUtil from "../container/ContainerUtil";
+import { 
+  Column,
+  extractJsonFromString,
+  extractMetadataSelect,
+  extractRunCmdSelect,
+  getColsTitles,
+  getNestedProperty,
+  parseColumns,
+  prepareColsToPrint,
+  trimQuotes 
+} from "./lib";
 
-const docker = new Docker();
-
-export class SqlUtil {
+export default class SqlUtil {
   private tables: { [tableName: string]: Column[] } = {};
   private data: { [tableName: string]: any[] } = {};
 
@@ -39,9 +45,11 @@ export class SqlUtil {
       const key = col.name;
       const value = trimQuotes(values[index]);
 
-      if(col.type === "DOCKER") {
+      if(col.type === "CONTAINER") {
         rowData[key] = new ContainerUtil(value)
-      } else {
+      } else if(col.type === "NUMBER") {
+        rowData[key] = Number(value)
+      }else {
         rowData[key] = value;
       }
 
@@ -91,7 +99,7 @@ export class SqlUtil {
           if (col.includes("metadata(")) {
             const { containerCol, field } = extractMetadataSelect(col);
             const isTableContainContainerCol = table.find(
-              (c) => c.name === containerCol && c.type.toUpperCase() === "DOCKER"
+              (c) => c.name === containerCol && c.type.toUpperCase() === "CONTAINER"
             );
             if (isTableContainContainerCol) {
               const container: ContainerUtil = row[containerCol];
@@ -105,7 +113,7 @@ export class SqlUtil {
             const {command, containerCol, nestedField} = extractRunCmdSelect(col);
             const isTableContainContainerCol = table.find(
               (c) =>
-                c.name === containerCol && c.type.toUpperCase() === "DOCKER"
+                c.name === containerCol && c.type.toUpperCase() === "CONTAINER"
             );
             if (isTableContainContainerCol && command) {
               const container: ContainerUtil = row[containerCol];
@@ -124,7 +132,7 @@ export class SqlUtil {
                 rowData.push(cmdResult || "No result");
               }
             } else {
-              rowData.push("Invalid Docker column");
+              rowData.push("Invalid CONTAINER column");
             }
           } else {
             const value = row[col].identifier ? row[col].identifier : String(row[col]);
@@ -167,7 +175,7 @@ export class SqlUtil {
 
     for (const row of rows) {
       for (const col of table) {
-        if (col.type.toUpperCase() === "DOCKER") {
+        if (col.type.toUpperCase() === "CONTAINER") {
           const container: ContainerUtil = row[col.name];
           await container.remove()
         }

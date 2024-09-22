@@ -7,7 +7,7 @@ import {
   extractPort,
 } from "./lib";
 
-export class ContainerUtil {
+export default class ContainerUtil {
   private container: Container | undefined;
   private config: Record<string, any>;
   private identifier: string;
