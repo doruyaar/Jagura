@@ -1,7 +1,8 @@
 import readline from 'readline';
-import { SQLEngine } from './sql/sqlEngine';
+import { SqlUtil } from './sql/SqlUtil';
 
-export function startCli(sqlEngine: SQLEngine) {
+export function startCli() {
+  const sqlUtil = new SqlUtil();
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -15,8 +16,7 @@ export function startCli(sqlEngine: SQLEngine) {
         return;
       }
 
-      // Process the query if it's not empty
-      sqlEngine.parseQuery(query);
+      sqlUtil.parseQuery(query);
       prompt();  // Continue prompting after the query is processed
     });
   }

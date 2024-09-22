@@ -24,6 +24,7 @@ export class ContainerUtil {
 
     this.container = await createContainer(this.config);
     await this.container.start()
+    return `launch container ${this.config.name} was successfully executed.`
   }
 
   async remove() {

@@ -1,30 +1,31 @@
 import Docker from "dockerode";
 import Table from "cli-table3";
-import { Column, extractJsonFromString, extractMetadataSelect, extractRunCmdSelect, getNestedProperty, parseColumns, trimQuotes } from "./lib";
+import { Column, extractJsonFromString, extractMetadataSelect, extractRunCmdSelect, getNestedProperty, parseColumns, prepareColsToPrint, trimQuotes } from "./lib";
 import { getColsTitles } from "./lib/getColsTitles";
 import { ContainerUtil } from "../container/ContainerUtil";
 
 const docker = new Docker();
-export class SQLEngine {
+
+export class SqlUtil {
   private tables: { [tableName: string]: Column[] } = {};
   private data: { [tableName: string]: any[] } = {};
 
-  getTable(name: string) {
+  private getTable(name: string) {
     return this.tables[name];
   }
 
-  getTableData(name: string) {
+  private getTableData(name: string) {
     return this.data[name];
   }
 
   createTable(tableName: string, columns: Column[]) {
     if (Object.keys(this.tables).includes(tableName)) {
-      console.log(`Table with name ${tableName} already exists`);
+      console.log(`[TABLE_OR_VIEW_ALREADY_EXISTS] Cannot create table or view ${tableName} because it already exists.`);
       return;
     }
     this.tables[tableName] = columns;
     this.data[tableName] = [];
-    console.log(`Table ${tableName} created with columns:`, columns);
+    return [["result"], [`create table ${tableName} ${prepareColsToPrint(columns)} was successfully executed.`]]
   }
 
   insertData(tableName: string, values: any[]) {
@@ -49,6 +50,7 @@ export class SQLEngine {
 
     tableData.push(rowData);
     console.log(`Inserted into ${tableName}:`, insertLog);
+    return [["num_affected_rows", "num_inserted_rows"], [1, 1]]
   }
 
   async selectData(
@@ -56,6 +58,7 @@ export class SQLEngine {
     columnsToSelect: string[],
     whereCondition?: { key: string; value: string | number }
   ) {
+    const result: Array<Array<any>> = [];
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
@@ -72,6 +75,8 @@ export class SQLEngine {
         selectedColumns.map((col) =>
           col.includes("metadata(") || col.includes("run_cmd(") ? 50 : 20
         )
+
+      result.push(getColsTitles(selectedColumns));
 
       const cliTable = new Table({
         head: getColsTitles(selectedColumns),
@@ -127,11 +132,12 @@ export class SQLEngine {
           }
         }
 
+        result.push(rowData);
         cliTable.push(rowData);
       }
 
       console.log(cliTable.toString());
-      return filteredRows;
+      return result;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
     }
@@ -144,8 +150,10 @@ export class SQLEngine {
       delete this.data[tableName];
       console.log(`Table ${tableName} and its records have been dropped.`);
     } else {
-      console.log(`Table ${tableName} does not exist.`);
+      console.log(`[TABLE_OR_VIEW_NOT_FOUND] The table or view ${tableName} cannot be found.`);
     }
+
+    return [["result"], [`drop table ${tableName} was successfully executed.`]]
   }
 
   async stopAndRemoveContainers(tableName: string) {
@@ -167,11 +175,16 @@ export class SQLEngine {
     }
   }
 
+  private showTables() {
+    return [["tableName"], ...Object.keys(this.tables).map(t => [t])]
+  }
+
   async launchContainer(
     tableName: string,
     columnName: string,
     condition: { key: string; value: string | number }
   ) {
+    const result: Array<any> = [];
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
@@ -181,32 +194,38 @@ export class SQLEngine {
       );
       if (rowToLaunch && rowToLaunch[columnName]) {
         const container: ContainerUtil = rowToLaunch[columnName];
-        await container.start();
+        result.push(
+          await container.start()
+        );
       } else {
-        console.log(
+        result.push(
           `No matching row found for ${condition.key} = '${condition.value}'`
         );
       }
     } else {
-      console.log(`Table ${tableName} or column ${columnName} doesn't exist.`);
+      result.push(`Table ${tableName} or column ${columnName} doesn't exist.`);
     }
+
+    return [["result"], [result]]
   }
 
   async parseQuery(query: string) {
-    const lowerCaseQuery = query.toLowerCase().trim();
     const createTableRegex = /create table (\w+) \((.+)\)/;
-    const insertRegex = /insert into (\w+) \((.+)\)/;
-    const selectRegex = /select (.+) from (\w+)/;
-    const whereRegex = /where (\w+) = ['"]?(.+?)['"]?/;
-    const launchRegex = /launch (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
     const dropTableRegex = /drop table (\w+)/;
+    const insertRegex = /insert into (\w+) \((.+)\)/;
+    const launchRegex = /launch (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const lowerCaseQuery = query.toLowerCase().trim();
+    const selectRegex = /select (.+) from (\w+)/;
+    const showTablesRegex = /show tables/;
+    const whereRegex = /where (\w+) = ['"]?(.+?)['"]?/;
 
     const createTableMatch = lowerCaseQuery.match(createTableRegex);
-    const insertMatch = lowerCaseQuery.match(insertRegex);
-    const selectMatch = lowerCaseQuery.match(selectRegex);
-    const whereMatch = lowerCaseQuery.match(whereRegex);
-    const launchMatch = lowerCaseQuery.match(launchRegex);
     const dropTableMatch = lowerCaseQuery.match(dropTableRegex);
+    const insertMatch = lowerCaseQuery.match(insertRegex);
+    const launchMatch = lowerCaseQuery.match(launchRegex);
+    const selectMatch = lowerCaseQuery.match(selectRegex);
+    const showTablesMatch = lowerCaseQuery.match(showTablesRegex);
+    const whereMatch = lowerCaseQuery.match(whereRegex);
 
     if (createTableMatch) {
       const tableName = createTableMatch[1];
@@ -214,11 +233,11 @@ export class SQLEngine {
         const [name, type] = col.trim().split(" ");
         return { name, type: type.toUpperCase() };
       });
-      this.createTable(tableName, columns);
+      return this.createTable(tableName, columns);
     } else if (insertMatch) {
       const tableName = insertMatch[1];
       const values = insertMatch[2].split(",").map((val) => val.trim());
-      this.insertData(tableName, values);
+      return this.insertData(tableName, values);
     } else if (selectMatch) {
       const columns = parseColumns(selectMatch[1]);
       const tableName = selectMatch[2];
@@ -226,26 +245,29 @@ export class SQLEngine {
       if (whereMatch) {
         const whereKey = whereMatch[1];
         const whereValue = whereMatch[2];
-        await this.selectData(tableName, columns, {
+        return await this.selectData(tableName, columns, {
           key: whereKey,
           value: whereValue,
         });
       } else {
-        await this.selectData(tableName, columns);
+        return await this.selectData(tableName, columns);
       }
     } else if (launchMatch) {
       const columnName = launchMatch[1];
       const tableName = launchMatch[2];
       const conditionKey = launchMatch[3];
       const conditionValue = launchMatch[4];
-      await this.launchContainer(tableName, columnName, {
+      return await this.launchContainer(tableName, columnName, {
         key: conditionKey,
         value: conditionValue,
       });
     } else if (dropTableMatch) {
       const tableName = dropTableMatch[1];
-      await this.dropTable(tableName);
-    } else {
+      return await this.dropTable(tableName);
+    } else if (showTablesMatch) {
+      return this.showTables();
+    }
+    else {
       console.log("Invalid query.");
     }
   }
