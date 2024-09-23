@@ -27,7 +27,7 @@ export default class SqlUtil {
   createTable(tableName: string, columns: Column[]) {
     if (Object.keys(this.tables).includes(tableName)) {
       console.log(`[TABLE_OR_VIEW_ALREADY_EXISTS] Cannot create table or view ${tableName} because it already exists.`);
-      return;
+      return [[""], [`[TABLE_OR_VIEW_ALREADY_EXISTS] Cannot create table or view ${tableName} because it already exists.`]];
     }
     this.tables[tableName] = columns;
     this.data[tableName] = [];
@@ -84,7 +84,9 @@ export default class SqlUtil {
           col.includes("metadata(") || col.includes("run_cmd(") ? 50 : 20
         )
 
-      result.push(getColsTitles(selectedColumns));
+      const colsTitlesWithTypes = [...table.filter(col => selectedColumns.includes(col.name)), ...getColsTitles(selectedColumns).filter(c => c.includes('(')).map(c => ({"name": c, "type": c.includes("metadata(") ? "METADATA" : "RUN"}))];
+      const colsTitlesOrders = selectedColumns.map(c => colsTitlesWithTypes.find(ct => ct.name == c))
+      result.push(colsTitlesOrders);
 
       const cliTable = new Table({
         head: getColsTitles(selectedColumns),
@@ -145,6 +147,7 @@ export default class SqlUtil {
       }
 
       console.log(cliTable.toString());
+      console.log(result);
       return result;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
@@ -184,44 +187,54 @@ export default class SqlUtil {
   }
 
   private showTables() {
-    return [["tableName"], ...Object.keys(this.tables).map(t => [t])]
+    const result: [string, any][] = [["tableName", "columns"]];
+    for (const tableName in this.tables) {
+      result.push([tableName, JSON.stringify(this.tables[tableName])]);
+    }
+
+    return result;
   }
 
   async launchContainer(
     tableName: string,
     columnName: string,
-    condition: { key: string; value: string | number }
+    condition?: { key: string; value: string | number }
   ) {
     const result: Array<any> = [];
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
-    if (table && rows) {
-      const rowToLaunch = rows.find(
+    if (!condition) {
+      for (const row of rows) {
+        if (row[columnName] instanceof ContainerUtil) {
+          const res = await row[columnName].start();
+          result.push([res]);
+        }
+      }
+    } else if (table && rows) {
+      const rowToLaunch = condition ? rows.find(
         (row) => row[condition.key] == condition.value
-      );
+      ) : rows;
       if (rowToLaunch && rowToLaunch[columnName]) {
         const container: ContainerUtil = rowToLaunch[columnName];
         result.push(
-          await container.start()
+          [await container.start()]
         );
       } else {
-        result.push(
-          `No matching row found for ${condition.key} = '${condition.value}'`
-        );
+        result.push(`No matching row found for ${condition!.key} = '${condition!.value}'`);
       }
     } else {
       result.push(`Table ${tableName} or column ${columnName} doesn't exist.`);
     }
 
-    return [["result"], [result]]
+    return [["result"], ...result];
   }
 
   async parseQuery(query: string) {
     const createTableRegex = /create table (\w+) \((.+)\)/;
     const dropTableRegex = /drop table (\w+)/;
     const insertRegex = /insert into (\w+) \((.+)\)/;
-    const launchRegex = /launch (\w+) from (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const launchRegex = /launch (\w+) from (\w+)/;// (\w+) where (\w+) = ['"]?(.+?)['"]?/;
     const lowerCaseQuery = query.toLowerCase().trim();
     const selectRegex = /select (.+) from (\w+)/;
     const showTablesRegex = /show tables/;
@@ -261,14 +274,28 @@ export default class SqlUtil {
         return await this.selectData(tableName, columns);
       }
     } else if (launchMatch) {
-      const columnName = launchMatch[1];
+      const column = launchMatch[1];
       const tableName = launchMatch[2];
-      const conditionKey = launchMatch[3];
-      const conditionValue = launchMatch[4];
-      return await this.launchContainer(tableName, columnName, {
-        key: conditionKey,
-        value: conditionValue,
-      });
+
+      if (whereMatch) {
+        const whereKey = whereMatch[1];
+        const whereValue = whereMatch[2];
+        return await this.launchContainer(tableName, column, {
+          key: whereKey,
+          value: whereValue,
+        });
+      }
+      else {
+        return await this.launchContainer(tableName, column);
+      }
+      // const columnName = launchMatch[1];
+      // const tableName = launchMatch[2];
+      // const conditionKey = launchMatch[3];
+      // const conditionValue = launchMatch[4];
+      // return await this.launchContainer(tableName, columnName, {
+      //   key: conditionKey,
+      //   value: conditionValue,
+      // });
     } else if (dropTableMatch) {
       const tableName = dropTableMatch[1];
       return await this.dropTable(tableName);

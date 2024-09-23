@@ -1,4 +1,5 @@
 export * from './createContainer'
+export * from './extractHostPort'
 export * from './extractMetadataField'
 export * from './extractPort'
 export * from './getAvailableContainerName'

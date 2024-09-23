@@ -5,6 +5,7 @@ import {
   extractMetadataField,
   handleMongoCommand,
   extractPort,
+  extractHostPort,
 } from "./lib";
 
 export default class ContainerUtil {
@@ -100,11 +101,16 @@ export default class ContainerUtil {
     const inspectData = await this.container.inspect();
     const stats = await this.container.stats({ stream: false });
 
+
+    const port = extractPort(inspectData.NetworkSettings.Ports);
+    const hostPort = extractHostPort(inspectData.NetworkSettings.Ports, port);
+
     return {
       name: inspectData.Name,
       image: inspectData.Config.Image,
       status: inspectData.State.Status,
-      port: extractPort(inspectData.NetworkSettings.Ports),
+      port,
+      hostPort,
       cpuUsage: stats.cpu_stats?.cpu_usage?.total_usage ?? "N/A",
       lastStarted: inspectData?.State?.StartedAt ?? "N/A",
     };
