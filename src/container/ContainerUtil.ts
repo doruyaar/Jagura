@@ -36,7 +36,41 @@ export default class ContainerUtil {
     try {
       await this.container.stop();
       await this.container.remove();
+      this.container = undefined;
       console.log(`Container ${this.config.name} stopped and removed.`);
+      return `Container ${this.config.name} stopped and removed.`;
+    } catch (error) {
+      console.error(
+        `Error stopping or removing container ${this.configFilePath}`
+      );
+    }
+  }
+
+  async stop() {
+    if (!this.container) {
+      return;
+    }
+
+    try {
+      await this.container.stop();
+      console.log(`Container ${this.config.name} stopped`);
+      return `Container ${this.config.name} stopped`;
+    } catch (error) {
+      console.error(
+        `Error stopping or removing container ${this.configFilePath}`
+      );
+    }
+  }
+
+  async restart() {
+    if (!this.container) {
+      return;
+    }
+
+    try {
+      await this.container.restart();
+      console.log(`Container ${this.config.name} restarted`);
+      return `Container ${this.config.name} restarted`;
     } catch (error) {
       console.error(
         `Error stopping or removing container ${this.configFilePath}`

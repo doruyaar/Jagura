@@ -230,11 +230,82 @@ export default class SqlUtil {
     return [["result"], ...result];
   }
 
+  async removeContainer(
+    tableName: string,
+    columnName: string,
+    condition?: { key: string; value: string | number }
+  ) {
+    const result: Array<any> = [];
+    const table = this.tables[tableName];
+    const rows = this.data[tableName];
+
+    if (!condition) {
+      for (const row of rows) {
+        if (row[columnName] instanceof ContainerUtil) {
+          const res = await row[columnName].remove();
+          result.push([res]);
+        }
+      }
+    } else if (table && rows) {
+      const rowToLaunch = condition ? rows.find(
+        (row) => row[condition.key] == condition.value
+      ) : rows;
+      if (rowToLaunch && rowToLaunch[columnName]) {
+        const container: ContainerUtil = rowToLaunch[columnName];
+        result.push(
+          [await container.remove()]
+        );
+      } else {
+        result.push(`No matching row found for ${condition!.key} = '${condition!.value}'`);
+      }
+    } else {
+      result.push(`Table ${tableName} or column ${columnName} doesn't exist.`);
+    }
+
+    return [["result"], ...result];
+  }
+
+  async restartContainer(
+    tableName: string,
+    columnName: string,
+    condition?: { key: string; value: string | number }
+  ) {
+    const result: Array<any> = [];
+    const table = this.tables[tableName];
+    const rows = this.data[tableName];
+
+    if (!condition) {
+      for (const row of rows) {
+        if (row[columnName] instanceof ContainerUtil) {
+          const res = await row[columnName].restart();
+          result.push([res]);
+        }
+      }
+    } else if (table && rows) {
+      const rowToLaunch = condition ? rows.find(
+        (row) => row[condition.key] == condition.value
+      ) : rows;
+      if (rowToLaunch && rowToLaunch[columnName]) {
+        const container: ContainerUtil = rowToLaunch[columnName];
+        result.push(
+          [await container.restart()]
+        );
+      } else {
+        result.push(`No matching row found for ${condition!.key} = '${condition!.value}'`);
+      }
+    } else {
+      result.push(`Table ${tableName} or column ${columnName} doesn't exist.`);
+    }
+
+    return [["result"], ...result];
+  }
+
   async parseQuery(query: string) {
     const createTableRegex = /create table (\w+) \((.+)\)/;
     const dropTableRegex = /drop table (\w+)/;
     const insertRegex = /insert into (\w+) \((.+)\)/;
-    const launchRegex = /launch (\w+) from (\w+)/;// (\w+) where (\w+) = ['"]?(.+?)['"]?/;
+    const launchRegex = /launch (\w+) from (\w+)/;
+    const removeRegex = /remove (\w+) from (\w+)/;
     const lowerCaseQuery = query.toLowerCase().trim();
     const selectRegex = /select (.+) from (\w+)/;
     const showTablesRegex = /show tables/;
@@ -244,6 +315,7 @@ export default class SqlUtil {
     const dropTableMatch = lowerCaseQuery.match(dropTableRegex);
     const insertMatch = lowerCaseQuery.match(insertRegex);
     const launchMatch = lowerCaseQuery.match(launchRegex);
+    const removeMatch = lowerCaseQuery.match(removeRegex);
     const selectMatch = lowerCaseQuery.match(selectRegex);
     const showTablesMatch = lowerCaseQuery.match(showTablesRegex);
     const whereMatch = lowerCaseQuery.match(whereRegex);
@@ -288,14 +360,21 @@ export default class SqlUtil {
       else {
         return await this.launchContainer(tableName, column);
       }
-      // const columnName = launchMatch[1];
-      // const tableName = launchMatch[2];
-      // const conditionKey = launchMatch[3];
-      // const conditionValue = launchMatch[4];
-      // return await this.launchContainer(tableName, columnName, {
-      //   key: conditionKey,
-      //   value: conditionValue,
-      // });
+    } else if (removeMatch) {
+      const column = removeMatch[1];
+      const tableName = removeMatch[2];
+
+      if (whereMatch) {
+        const whereKey = whereMatch[1];
+        const whereValue = whereMatch[2];
+        return await this.removeContainer(tableName, column, {
+          key: whereKey,
+          value: whereValue,
+        });
+      }
+      else {
+        return await this.removeContainer(tableName, column);
+      }
     } else if (dropTableMatch) {
       const tableName = dropTableMatch[1];
       return await this.dropTable(tableName);
