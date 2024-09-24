@@ -20,21 +20,56 @@ export default class ContainerUtil {
 
   async start() {
     if (this.container) {
-      return;
+      const status = await this.getStatus();
+      if (status === "running") {
+        return `Container: ${this.config.name} is already running.`;
+      }
     }
 
     this.container = await createContainer(this.config);
-    await this.container.start()
-    return `launch container ${this.config.name} was successfully executed.`
+    await this.container.start();
+    return `Container ${this.config.name} was successfully started.`;
+  }
+
+  async pause() {
+    if (!this.container) {
+      return `Unable to pause container: ${this.config.name}. Container: ${this.config.name} is not exists.`;
+    }
+
+    const status = await this.getStatus();
+    if (status === "exited") {
+      return `Unable to pause container: ${this.config.name}. Container: ${this.config.name} already stopped`;
+    }
+
+    await this.container.pause();
+    return `Container ${this.config.name} was successfully paused.`;
+  }
+
+  async unpause() {
+    if (!this.container) {
+      return `Unable to unpause container: ${this.config.name}. Container: ${this.config.name} is not exists.`;
+    }
+
+    const status = await this.getStatus();
+    if (status === "running") {
+      return `Unable to unpause container: ${this.config.name}. Container: ${this.config.name} is already running.`;
+    }
+
+    await this.container.unpause();
+    return `Container ${this.config.name} was successfully unpaused.`;
   }
 
   async remove() {
     if (!this.container) {
-      return;
+      return `Unable to remove container: ${this.config.name}. Container: ${this.config.name} is not exists.`;
+    }
+
+    const status = await this.getStatus();
+    if (status === "running") {
+      await this.container.stop();
     }
 
     try {
-      await this.container.stop();
       await this.container.remove();
       this.container = undefined;
       console.log(`Container ${this.config.name} stopped and removed.`);
@@ -46,9 +81,35 @@ export default class ContainerUtil {
     }
   }
 
+  async kill() {
+    if (!this.container) {
+      return `Unable to kill container: ${this.config.name}. Container: ${this.config.name} is not exists.`;
+    }
+
+    const status = await this.getStatus();
+    if (status === "exited") {
+      return `Cannot kill container: ${this.config.name}. Container: is not running.`;
+    }
+
+    try {
+      await this.container.kill();
+      console.log(`Container ${this.config.name} stopped and killed.`);
+      return `Container ${this.config.name} stopped and killed.`;
+    } catch (error) {
+      console.error(
+        `Error stopping or removing container ${this.configFilePath}`
+      );
+    }
+  }
+
   async stop() {
     if (!this.container) {
-      return;
+      return `Unable to stop container: ${this.config.name}. Container: ${this.config.name} is not exists.`;
+    }
+
+    const status = await this.getStatus();
+    if (status === "exited") {
+      return `Container: ${this.config.name} is already stopped.`;
     }
 
     try {
@@ -64,7 +125,12 @@ export default class ContainerUtil {
 
   async restart() {
     if (!this.container) {
-      return;
+      return `Unable to restart container: ${this.config.name}. Container: ${this.config.name} is not exists.`;
+    }
+
+    const status = await this.getStatus();
+    if (status === "running") {
+      return `Unable to restart container: ${this.config.name}. Container: ${this.config.name} is already running.`;
     }
 
     try {
@@ -84,7 +150,7 @@ export default class ContainerUtil {
       if (metadata && queryProperty) {
         return extractMetadataField(metadata, queryProperty);
       }
-  
+
       return metadata;
     } catch (error) {
       console.error(`Error fetching metadata for container ${this.identifier}`);
@@ -96,11 +162,11 @@ export default class ContainerUtil {
       return;
     }
 
-    const containerInfo = await this.getInfo()
-    const cmdArray = 
+    const containerInfo = await this.getInfo();
+    const cmdArray =
       containerInfo?.image == "mongo"
-      ? handleMongoCommand({ command, port: containerInfo.port})
-      : ["sh", "-c", command];
+        ? handleMongoCommand({ command, port: containerInfo.port })
+        : ["sh", "-c", command];
 
     try {
       const exec = await this.container.exec({
@@ -127,6 +193,14 @@ export default class ContainerUtil {
     }
   }
 
+  private async getStatus() {
+    if (!this.container) {
+      return;
+    }
+    const inspectData = await this.container.inspect();
+    return inspectData.State.Status;
+  }
+
   async getInfo() {
     if (!this.container) {
       return;
@@ -134,7 +208,6 @@ export default class ContainerUtil {
 
     const inspectData = await this.container.inspect();
     const stats = await this.container.stats({ stream: false });
-
 
     const port = extractPort(inspectData.NetworkSettings.Ports);
     const hostPort = extractHostPort(inspectData.NetworkSettings.Ports, port);
