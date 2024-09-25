@@ -21,7 +21,7 @@ export default class ContainerUtil {
   async start() {
     if (this.container) {
       const status = await this.getStatus();
-      if (status === "running") {
+      if (status === "running" || status === "exited") {
         return `Container: ${this.config.name} is already running.`;
       }
     }
