@@ -1,7 +1,10 @@
 import Table from "cli-table3";
 import ContainerUtil from "../container/ContainerUtil";
 import {
+  cleanInput,
   Column,
+  ContainerAction,
+  extractContainerFunc,
   extractJsonFromString,
   extractMetadataSelect,
   extractRunCmdSelect,
@@ -9,18 +12,8 @@ import {
   getNestedProperty,
   parseColumns,
   prepareColsToPrint,
-  removeSemicolon,
   trimQuotes,
 } from "./lib";
-
-type ContainerActions =
-  | "start"
-  | "stop"
-  | "pause"
-  | "unpause"
-  | "remove"
-  | "restart"
-  | "kill";
 
 export default class SqlUtil {
   private tables: { [tableName: string]: Column[] } = {};
@@ -34,7 +27,7 @@ export default class SqlUtil {
     return this.data[name];
   }
 
-  createTable(tableName: string, columns: Column[]) {
+  private createTable(tableName: string, columns: Column[]) {
     if (Object.keys(this.tables).includes(tableName)) {
       console.log(
         `[TABLE_OR_VIEW_ALREADY_EXISTS] Cannot create table or view ${tableName} because it already exists.`
@@ -58,7 +51,7 @@ export default class SqlUtil {
     ];
   }
 
-  insertData(tableName: string, values: any[]) {
+  private insertData(tableName: string, values: any[]) {
     const table = this.getTable(tableName);
     const tableData = this.getTableData(tableName);
     const rowData: any = {};
@@ -93,6 +86,17 @@ export default class SqlUtil {
     columnsToSelect: string[],
     whereCondition?: { key: string; value: string | number }
   ) {
+
+    const containerActionMap: Record<ContainerAction, (container: ContainerUtil) => Promise<any>> = {
+      "start": (container: ContainerUtil) => container.start(),
+      "stop": (container: ContainerUtil) => container.stop(),
+      "pause": (container: ContainerUtil) => container.pause(),
+      "unpause": (container: ContainerUtil) => container.unpause(),
+      "remove": (container: ContainerUtil) => container.remove(),
+      "restart": (container: ContainerUtil) => container.restart(),
+      "kill": (container: ContainerUtil) => container.kill()
+    }
+
     const result: Array<Array<any>> = [];
     const table = this.tables[tableName];
     const rows = this.data[tableName];
@@ -113,13 +117,17 @@ export default class SqlUtil {
           col.includes("metadata(") || col.includes("run_cmd(") ? 50 : 20
         );
 
+      const getType = (colName: string) => {
+        return colName.split("(")[0].toUpperCase();
+      }
+
       const colsTitlesWithTypes = [
         ...table.filter((col) => selectedColumns.includes(col.name)),
-        ...getColsTitles(selectedColumns)
+        ...selectedColumns
           .filter((c) => c.includes("("))
           .map((c) => ({
             name: c,
-            type: c.includes("metadata(") ? "METADATA" : "RUN",
+            type: getType(c),
           })),
       ];
       const colsTitlesOrders = selectedColumns.map((c) =>
@@ -138,7 +146,8 @@ export default class SqlUtil {
 
         for (const col of selectedColumns) {
           if (col.includes("metadata(")) {
-            const { containerCol, field } = extractMetadataSelect(col);
+            const { command, containerCol, args } =
+              extractContainerFunc(col);
             const isTableContainContainerCol = table.find(
               (c) =>
                 c.name === containerCol && c.type.toUpperCase() === "CONTAINER"
@@ -146,7 +155,7 @@ export default class SqlUtil {
             if (isTableContainContainerCol) {
               const container: ContainerUtil = row[containerCol];
               const metadata = await container.getMetadata(
-                field?.toLowerCase()
+                args[0]?.toLowerCase()
               );
               const value = metadata
                 ? JSON.stringify(metadata, null, 2)
@@ -156,19 +165,19 @@ export default class SqlUtil {
               rowData.push("Invalid Container column");
             }
           } else if (col.includes("run_cmd(")) {
-            const { command, containerCol, nestedField } =
-              extractRunCmdSelect(col);
+            const { command, containerCol, args } =
+              extractContainerFunc(col);
             const isTableContainContainerCol = table.find(
               (c) =>
                 c.name === containerCol && c.type.toUpperCase() === "CONTAINER"
             );
             if (isTableContainContainerCol && command) {
               const container: ContainerUtil = row[containerCol];
-              const cmdResult = await container.runCommand(command);
-              if (nestedField) {
+              const cmdResult = await container.runCommand(args[0]);
+              if (args[1]) {
                 const jsonResult = extractJsonFromString(cmdResult || "{}");
                 const propertyValue = jsonResult
-                  ? getNestedProperty(jsonResult, nestedField)
+                  ? getNestedProperty(jsonResult, args[2])
                   : null;
                 rowData.push(
                   propertyValue !== undefined
@@ -178,10 +187,40 @@ export default class SqlUtil {
               } else {
                 rowData.push(cmdResult || "No result");
               }
-            } else {
+            } 
+            else {
               rowData.push("Invalid CONTAINER column");
             }
-          } else {
+          } else if (col.includes("(")) {
+            const { command, containerCol, args } =
+              extractContainerFunc(col);
+            const isTableContainContainerCol = table.find(
+              (c) =>
+                c.name === containerCol && c.type.toUpperCase() === "CONTAINER"
+            );
+            if (isTableContainContainerCol && command) {
+              const container: ContainerUtil = row[containerCol];
+              const actionFn = containerActionMap[command];
+              const cmdResult = await actionFn(container);
+              if (args[2]) {
+                const jsonResult = extractJsonFromString(cmdResult || "{}");
+                const propertyValue = jsonResult
+                  ? getNestedProperty(jsonResult, args[2])
+                  : null;
+                rowData.push(
+                  propertyValue !== undefined
+                    ? JSON.stringify(propertyValue, null, 2)
+                    : "Property not found"
+                );
+              } else {
+                rowData.push(cmdResult || "No result");
+              }
+            } 
+            else {
+              rowData.push("Invalid CONTAINER column");
+            }
+          } 
+          else {
             const value = row[col].identifier
               ? row[col].identifier
               : String(row[col]);
@@ -198,6 +237,7 @@ export default class SqlUtil {
       return result;
     } else {
       console.log(`Table ${tableName} doesn't exist.`);
+      return [[""], [`[TABLE_OR_VIEW_NOT_FOUND] The table or view ${tableName} doesn't exist.`]];
     }
   }
 
@@ -209,14 +249,15 @@ export default class SqlUtil {
       console.log(`Table ${tableName} and its records have been dropped.`);
     } else {
       console.log(
-        `[TABLE_OR_VIEW_NOT_FOUND] The table or view ${tableName} cannot be found.`
+        `[TABLE_OR_VIEW_NOT_FOUND] The table or view ${tableName} doesn't exist.`
       );
+      return [[""], [`[TABLE_OR_VIEW_NOT_FOUND] The table or view ${tableName} doesn't exist.`]];
     }
 
     return [["result"], [`drop table ${tableName} was successfully executed.`]];
   }
 
-  async stopAndRemoveContainers(tableName: string) {
+  private async stopAndRemoveContainers(tableName: string) {
     const table = this.tables[tableName];
     const rows = this.data[tableName];
 
@@ -244,92 +285,22 @@ export default class SqlUtil {
     return result;
   }
 
-  async launchContainerAction({
-    tableName,
-    columnName,
-    action,
-    condition,
-  }: {
-    tableName: string;
-    columnName: string;
-    action: ContainerActions;
-    condition?: { key: string; value: string | number };
-  }) {
-    const result: Array<any> = [];
-    const table = this.tables[tableName];
-    const rows = this.data[tableName];
-
-    const actionMap = {
-      "start": (container: ContainerUtil) => container.start.bind(container),
-      "stop": (container: ContainerUtil) => container.stop.bind(container),
-      "pause": (container: ContainerUtil) => container.pause.bind(container),
-      "unpause": (container: ContainerUtil) => container.unpause.bind(container),
-      "remove": (container: ContainerUtil) => container.remove.bind(container),
-      "restart": (container: ContainerUtil) => container.restart.bind(container),
-      "kill": (container: ContainerUtil) => container.kill.bind(container)
-    }
-
-    if (!condition) {
-      for (const row of rows) {
-        if (row[columnName] instanceof ContainerUtil) {
-          const container = row[columnName];
-          const actionFn = actionMap[action];
-          const res = await actionFn(container)();
-          result.push([res]);
-        }
-      }
-    } else if (table && rows) {
-      const rowToLaunch = condition
-        ? rows.find((row) => row[condition.key] == condition.value)
-        : rows;
-      if (rowToLaunch && rowToLaunch[columnName]) {
-        const container: ContainerUtil = rowToLaunch[columnName];
-        const actionFn = actionMap[action];
-        const res = await actionFn(container)();
-        result.push([res]);
-      } else {
-        result.push(
-          `No matching row found for ${condition!.key} = '${condition!.value}'`
-        );
-      }
-    } else {
-      result.push(`Table ${tableName} or column ${columnName} doesn't exist.`);
-    }
-
-    return [["result"], ...result];
-  }
-
   async parseQuery(input: string) {  
-    const query = removeSemicolon(input);
+    const query = cleanInput(input);
 
     const createTableRegex = /create table (\w+) \((.+)\)/;
     const dropTableRegex = /drop table (\w+)/;
     const insertRegex = /insert into (\w+) \((.+)\)/;
-    const startRegex = /^start (\w+) from (\w+)/;
-    const stopRegex = /stop (\w+) from (\w+)/;
-    const pauseRegex = /^pause (\w+) from (\w+)/;
-    const unpauseRegex = /unpause (\w+) from (\w+)/;
-    const restartRegex = /restart (\w+) from (\w+)/;
-    const killRegex = /kill (\w+) from (\w+)/;
-    const removeRegex = /remove (\w+) from (\w+)/;
-    const lowerCaseQuery = query.toLowerCase().trim();
     const selectRegex = /select (.+) from (\w+)/;
     const showTablesRegex = /show tables/;
     const whereRegex = /where\s+(\w+)\s*=\s*['"]?([^'"]+)['"]?/;
 
-    const createTableMatch = lowerCaseQuery.match(createTableRegex);
-    const dropTableMatch = lowerCaseQuery.match(dropTableRegex);
-    const insertMatch = lowerCaseQuery.match(insertRegex);
-    const startMatch = lowerCaseQuery.match(startRegex);
-    const stopMatch = lowerCaseQuery.match(stopRegex);
-    const pauseMatch = lowerCaseQuery.match(pauseRegex);
-    const unpauseMatch = lowerCaseQuery.match(unpauseRegex);
-    const restartMatch = lowerCaseQuery.match(restartRegex);
-    const killMatch = lowerCaseQuery.match(killRegex);
-    const removeMatch = lowerCaseQuery.match(removeRegex);
-    const selectMatch = lowerCaseQuery.match(selectRegex);
-    const showTablesMatch = lowerCaseQuery.match(showTablesRegex);
-    const whereMatch = lowerCaseQuery.match(whereRegex);
+    const createTableMatch = query.match(createTableRegex);
+    const dropTableMatch = query.match(dropTableRegex);
+    const insertMatch = query.match(insertRegex);
+    const selectMatch = query.match(selectRegex);
+    const showTablesMatch = query.match(showTablesRegex);
+    const whereMatch = query.match(whereRegex);
 
     const handlers = {
       createTable: (match: RegExpMatchArray) => {
@@ -370,56 +341,6 @@ export default class SqlUtil {
       showTables: () => {
         return this.showTables();
       },
-
-      start: async (match: RegExpMatchArray, whereMatch: RegExpMatchArray | null) => {
-        return await this.launchAction({
-          action: "start",
-          actionMatch: match,
-          whereMatch,
-        });
-      },
-      stop: async (match: RegExpMatchArray, whereMatch: RegExpMatchArray | null) => {
-        return await this.launchAction({
-          action: "stop",
-          actionMatch: match,
-          whereMatch,
-        });
-      },
-      pause: async (match: RegExpMatchArray, whereMatch: RegExpMatchArray | null) => {
-        return await this.launchAction({
-          action: "pause",
-          actionMatch: match,
-          whereMatch,
-        });
-      },
-      unpause: async (match: RegExpMatchArray, whereMatch: RegExpMatchArray | null) => {
-        return await this.launchAction({
-          action: "unpause",
-          actionMatch: match,
-          whereMatch,
-        });
-      },
-      restart: async (match: RegExpMatchArray, whereMatch: RegExpMatchArray | null) => {
-        return await this.launchAction({
-          action: "restart",
-          actionMatch: match,
-          whereMatch,
-        });
-      },
-      remove: async (match: RegExpMatchArray, whereMatch: RegExpMatchArray | null) => {
-        return await this.launchAction({
-          action: "remove",
-          actionMatch: match,
-          whereMatch,
-        });
-      },
-      kill: async (match: RegExpMatchArray, whereMatch: RegExpMatchArray | null) => {
-        return await this.launchAction({
-          action: "kill",
-          actionMatch: match,
-          whereMatch,
-        });
-      },
     };
 
     const matchTypes: Array<{ type: keyof typeof handlers, match: RegExpMatchArray | null }> = [
@@ -428,13 +349,6 @@ export default class SqlUtil {
       { type: "select", match: selectMatch },
       { type: "dropTable", match: dropTableMatch },
       { type: "showTables", match: showTablesMatch },
-      { type: "start", match: startMatch },
-      { type: "stop", match: stopMatch },
-      { type: "pause", match: pauseMatch },
-      { type: "unpause", match: unpauseMatch },
-      { type: "restart", match: restartMatch },
-      { type: "remove", match: removeMatch },
-      { type: "kill", match: killMatch },
     ];
 
     for (const { type, match } of matchTypes) {
@@ -448,37 +362,6 @@ export default class SqlUtil {
     }
 
     console.log("Invalid query.");
-  }
-
-  async launchAction({
-    action,
-    actionMatch,
-    whereMatch,
-  }: {
-    action: ContainerActions;
-    actionMatch: RegExpMatchArray;
-    whereMatch?: RegExpMatchArray | null;
-  }) {
-    const columnName = actionMatch[1];
-    const tableName = actionMatch[2];
-    if (whereMatch) {
-      const whereKey = whereMatch[1];
-      const whereValue = whereMatch[2];
-      return await this.launchContainerAction({
-        tableName,
-        columnName,
-        action,
-        condition: {
-          key: whereKey,
-          value: whereValue,
-        },
-      });
-    } else {
-      return await this.launchContainerAction({
-        tableName,
-        columnName,
-        action,
-      });
-    }
+    return [[""], [`Invalid query: ${input}`]]
   }
 }
