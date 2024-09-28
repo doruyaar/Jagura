@@ -6,8 +6,6 @@ import {
   ContainerAction,
   extractContainerFunc,
   extractJsonFromString,
-  extractMetadataSelect,
-  extractRunCmdSelect,
   getColsTitles,
   getNestedProperty,
   parseColumns,
