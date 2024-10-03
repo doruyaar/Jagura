@@ -9,5 +9,5 @@ mongo:
 
 use mydatabase
 db.users.insertOne({name: 'Dor', age: 34})
-db.users.insertOne({name: 'Hadar', age: 24})
+db.users.insertOne({name: 'Ikura chan', age: 24})
 db.users.find({name: 'Dor'})

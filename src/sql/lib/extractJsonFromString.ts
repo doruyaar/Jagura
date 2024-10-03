@@ -6,7 +6,8 @@ export const extractJsonFromString = (str: string): any => {
       const jsonString = str.substring(jsonStart, jsonEnd + 1);
       return customParseJSON(jsonString);
     } catch (error) {
-      return undefined;
+      const jsonString = str.substring(jsonStart, jsonEnd + 1);
+      return JSON.parse(jsonString);
     }
   }
   return undefined;

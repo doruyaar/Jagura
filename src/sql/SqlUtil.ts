@@ -98,6 +98,7 @@ export default class SqlUtil {
     const result: Array<Array<any>> = [];
     const table = this.tables[tableName];
     const rows = this.data[tableName];
+    let sum = 0;
 
     const isSelectAllColumns =
       columnsToSelect.length === 1 && columnsToSelect[0] === "*";
@@ -143,7 +144,24 @@ export default class SqlUtil {
         const rowData: string[] = [];
 
         for (const col of selectedColumns) {
-          if (col.includes("metadata(")) {
+          if (col.includes("count(")) {
+            rowData.push(filteredRows.length.toString());
+            result.push(rowData);
+            return result;
+          } else if (col.includes("sum(")) {
+            const extractColumn = col.split("(")[1].split(")")[0];
+            const value = row[extractColumn].identifier
+              ? row[extractColumn].identifier
+              : String(row[extractColumn]);
+            sum = sum + Number(value)
+            continue;
+          } else if (col.includes("length(")) {
+            const extractColumn = col.split("(")[1].split(")")[0];
+            const value = row[extractColumn].identifier
+              ? row[extractColumn].identifier
+              : String(row[extractColumn]);
+            rowData.push(value.length);
+          } else if (col.includes("metadata(")) {
             const { command, containerCol, args } =
               extractContainerFunc(col);
             const isTableContainContainerCol = table.find(
@@ -175,7 +193,7 @@ export default class SqlUtil {
               if (args[1]) {
                 const jsonResult = extractJsonFromString(cmdResult || "{}");
                 const propertyValue = jsonResult
-                  ? getNestedProperty(jsonResult, args[2])
+                  ? getNestedProperty(jsonResult, args[1])
                   : null;
                 rowData.push(
                   propertyValue !== undefined
@@ -228,6 +246,10 @@ export default class SqlUtil {
 
         result.push(rowData);
         cliTable.push(rowData);
+      }
+
+      if (sum) {
+        result.push([sum])
       }
 
       console.log(cliTable.toString());
