@@ -1,6 +1,6 @@
 # Jagura
 
-![Jagura Logo](<app-image>)
+![Jagura Logo](logo.png)
 
 **Jagura** is an SQL interface for managing containers. This project acts like a traditional SQL database with standard SQL syntax but introduces a new type, `container`, with functions like `START`, `STOP`, `KILL`, `RESTART`, `PAUSE`, and `RESUME`.
 
