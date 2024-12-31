@@ -4,7 +4,7 @@
 
 
 > **An SQL interface for managing containers.**  
-> Jagura works like any SQL database, but with an additional `CONTAINER` data type that provides special functions to manage container operations such as **start**, **stop**, **kill**, **restart**, **pause**, **resume**, **get container metadata**, **run commands in the container**, and more.
+> Jagura works like any SQL database, but with an additional `CONTAINER` data type that provides special functions to manage container operations such as **start**, **stop**, **kill**, **restart**, **pause**, **unpause**, **get container metadata**, **run commands in the container**, and more.
 
 ---
 
@@ -134,7 +134,7 @@ SELECT RESTART(app) FROM tablename;
 
 -- Pause/Resume container
 SELECT PAUSE(app) FROM tablename;
-SELECT RESUME(app) FROM tablename;
+SELECT UNPAUSE(app) FROM tablename;
 
 -- Metadata
 SELECT METADATA(app) FROM tablename;
