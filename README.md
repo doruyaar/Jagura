@@ -62,7 +62,7 @@ CREATE TABLE tablename (id NUMBER, name STRING, app CONTAINER);
 ```
 Adding Records:
 ```sql
-INSERT INTO tablename VALUES (2, 'aaaa', 'imgs/alpine.json');
+INSERT INTO tablename (2, 'aaaa', 'imgs/alpine.json');
 ```
 Note: The app works with JSON files that define the image (e.g., files in the /imgs folder).
 
@@ -125,7 +125,7 @@ CREATE TABLE t1 (id NUMBER, c CONTAINER);
 Insert a record:
 
 ```sql
-INSERT INTO t1 VALUES (3, 'imgs/alpine.json');
+INSERT INTO t1 (3, 'imgs/alpine.json');
 ```
 
 Start the container:
