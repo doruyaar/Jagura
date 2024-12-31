@@ -192,5 +192,5 @@ SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", name) F
 SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", name), id, METADATA(c) FROM t1 WHERE id = 3;
 ```
 
-**Note**: In the frontend, you can highlight the row of SQL you want to execute and press **Run**—it will execute only that highlighted row, just like in many SQL editors.  
+**Note**: In the frontend, you can highlight the row of SQL you want to execute and press **Run** (or CTRL + ENTER) —it will execute only that highlighted row, just like in many SQL editors.  
 Happy container-managing with **Jagura**!
