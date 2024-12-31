@@ -96,6 +96,9 @@ Jagura supports standard SQL commands with a twist:
 -- Create a table
 CREATE TABLE tablename (id NUMBER, name STRING, app CONTAINER);
 
+-- DELETE a table
+DROP TABLE tablename;
+
 -- Insert records
 INSERT INTO tablename (2, 'aaaa', 'imgs/alpine.json');
 INSERT INTO tablename (3, 'bbbbb', 'imgs/nginx.json');
