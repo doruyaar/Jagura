@@ -186,7 +186,7 @@ SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2") FROM t1
 SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", name) FROM t1 WHERE id = 3;
 
 -- Return additional info like id and container metadata in the same query
-SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", name) AS characterName, id, METADATA(c) AS containerMetadata FROM t1 WHERE id = 3;
+SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", name), id, METADATA(c) AS containerMetadata FROM t1 WHERE id = 3;
 ```
 
 **Note**: In the frontend, you can highlight the row of SQL you want to execute and press **Run**—it will execute only that highlighted row, just like in many SQL editors.  
