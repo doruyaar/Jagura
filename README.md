@@ -1,169 +1,198 @@
 <p align="center">
-  <img src="logo.png" alt="Alt Text" width="450">
+  <img src="logo.png" alt="Alt Text" width="250">
 </p>
 
-**Jagura** is an SQL interface for managing containers. This project acts like a traditional SQL database with standard SQL syntax but introduces a new type, `container`, with functions like `START`, `STOP`, `KILL`, `RESTART`, `PAUSE`, and `RESUME`.
 
-## Getting Started
+> **An SQL interface for managing containers.**  
+> Jagura works like any SQL database, but with an additional `CONTAINER` data type that provides special functions to manage container operations such as **start**, **stop**, **kill**, **restart**, **pause**, **resume**, **get container metadata**, **run commands in the container**, and more.
 
-### Prerequisites
+---
 
-To run this project, ensure you have the following:
+## Table of Contents
 
-1. **Paddock (this project)**  
-Clone this repository and run:  
+- [Overview](#overview)  
+- [Requirements](#requirements)  
+- [Installation](#installation)  
+- [Usage](#usage)  
+  - [SQL Syntax](#sql-syntax)  
+  - [Container Functions](#container-functions)  
+  - [Examples](#examples)  
+- [Contributing](#contributing)  
+- [License](#license)
+
+---
+
+## Overview
+
+Jagura is designed to feel familiar to anyone using SQL. Create tables, insert rows, query with standard SQL syntax, and leverage container-specific functions:
+
+- **Standard SQL**  
+  - `CREATE TABLE`, `INSERT`, `SELECT`, `WHERE`, etc.
+  - Aggregations like `SUM()`, `COUNT()`, `LENGTH()` on numeric or string columns.
+- **Container-Aware SQL**  
+  - `START(container_column)`, `STOP(container_column)`, `RESTART(container_column)`, etc.
+  - Get container `METADATA`.
+  - Run commands inside containers with `RUN_CMD()`.
+
+---
+
+## Requirements
+
+To run Jagura, you will need:
+
+1. **[Paddock (this project)](https://github.com/your-username/paddock)**
+2. **[Paddock-Frontend (other project)](https://github.com/your-username/paddock-frontend)**
+3. **[Docker Desktop](https://www.docker.com/products/docker-desktop)**, running in the background.
+4. **Docker images** you want to use (e.g., `alpine`, `nginx`, etc.).
+
+---
+
+## Installation
+
 ```bash
+# 1. Clone the Paddock repo and install dependencies:
+git clone https://github.com/doruyaar/paddock.git
+cd paddock
+npm install
+
+# 2. Clone the Paddock-Frontend repo in a separate folder and install dependencies:
+git clone https://github.com/doruyaar/paddock-frontend.git
+cd paddock-frontend
 npm install
 ```
 
-2. Paddock-Frontend (other project)
-Clone the frontend repository and run:
+> **Ensure Docker Desktop** is installed and running.
+
+---
+
+## Usage
+
+### Starting the Server and Frontend
+
 ```bash
-npm install
-```
+# Run the server in the Paddock project
+npm start run:api
 
-3. Docker Desktop
-Ensure Docker Desktop is running in the background.
-
-4. Docker Images
-Pull the necessary Docker images for the containers, for exmaple:
-
-```
-docker pull alpine  
-docker pull nginx
-```
-
-## Running the Application
-
-#### 1. Start the server:
-In the Paddock project directory, run: 
-```
-npm run start:api
-```
-
-#### 2.Start the frontend
-In the Paddock-Frontend directory, run:
-```
+# Run the frontend in the Paddock-Frontend project
 npm run dev
 ```
-This will usually run on http://localhost:5173/.
 
+- The frontend will typically run on [http://localhost:5173/](http://localhost:5173/).  
+- **Docker Desktop** should be open and running in the background.
+- Pull the desired Docker images on your system, for example:
+  ```bash
+  docker pull alpine
+  docker pull nginx
+  # ...and so on
+  ```
 
-#### 3.Ensure Docker Desktop is running
-Run the Docker Desktop app in the background.
+---
 
-#### 4.Prepare Images
-Pull Docker images as required (e.g., Alpine, Nginx, Ubuntu, etc.).
+### SQL Syntax
 
-## SQL Examples
-Creating a Table:
+Jagura supports standard SQL commands with a twist:
+
 ```sql
+-- Create a table
 CREATE TABLE tablename (id NUMBER, name STRING, app CONTAINER);
-```
-Adding Records:
-```sql
+
+-- Insert records
 INSERT INTO tablename (2, 'aaaa', 'imgs/alpine.json');
-```
-Note: The app works with JSON files that define the image (e.g., files in the /imgs folder).
+INSERT INTO tablename (3, 'bbbbb', 'imgs/nginx.json');
 
-## Supported SQL Functions
-### General Functions:
+-- Query data
+SELECT * FROM tablename;
 
-#### SUM: Aggregate numeric values.
-Example:
-
-```sql
+-- Built-in SQL functions
 SELECT SUM(id) FROM tablename;
-```
-#### COUNT: count rows
-Example:
-
-```sql
 SELECT COUNT(*) FROM tablename;
-```
-
-#### LENGTH: Get the length of string values.
-Example:
-
-```sql
 SELECT LENGTH(name) FROM tablename;
 ```
 
-### Container-Specific Functions:
-#### START/STOP/KILL/PAUSE/RESUME/RESTART: Manage container lifecycle.
-Examples:
+> **Note**: The app currently works with a path to a JSON file (e.g., `imgs/alpine.json`) that defines the image.  
+> Ensure you have the corresponding Docker image pulled locally.
+
+---
+
+### Container Functions
+
+These specialized functions operate on any `CONTAINER` type column:
 
 ```sql
+-- Start container
 SELECT START(app) FROM tablename;
--- or:
+SELECT START(app) FROM tablename WHERE id = 2;
+
+-- Stop container
 SELECT STOP(app) FROM tablename WHERE id = 2;
-```
 
-#### METADATA: Fetch container metadata.
-Example:
+-- Kill container
+SELECT KILL(app) FROM tablename;
 
-```sql
+-- Restart container
+SELECT RESTART(app) FROM tablename;
+
+-- Pause/Resume container
+SELECT PAUSE(app) FROM tablename;
+SELECT RESUME(app) FROM tablename;
+
+-- Metadata
 SELECT METADATA(app) FROM tablename;
---or if u want to extract certain field from metadata:
-SELECT METADATA(app, 'status') FROM tablename;
-```
 
-#### RUN_CMD: Execute commands inside a container.
-Example:
+-- Extract a single key from Metadata
+SELECT METADATA(app, status) FROM tablename;
 
-```sql
+-- Run Commands in Container
 SELECT RUN_CMD(app, 'ls -la') FROM tablename WHERE id = 4;
 ```
 
-## Sample Scenario
-### Create and Manage an Alpine Container"
-Create a table:
+The `METADATA(app)` call returns JSON metadata, for example:
+
+```json
+{
+  "name": "/my-alpine-container",
+  "image": "alpine",
+  "status": "running",
+  "port": "N/A",
+  "hostPort": "N/A",
+  "cpuUsage": 18722000,
+  "lastStarted": "2024-12-31T18:39:39.492046291Z"
+}
+```
+
+---
+
+### Examples
+
+#### Creating an Alpine container, installing `curl`, and making an API request:
 
 ```sql
+-- Create a table
 CREATE TABLE t1 (id NUMBER, c CONTAINER);
-```
-Insert a record:
 
-```sql
+-- Insert a record with Alpine
 INSERT INTO t1 (3, 'imgs/alpine.json');
-```
 
-Start the container:
-```sql
+-- Start the Alpine container
 SELECT START(c) FROM t1 WHERE id = 3;
-```
-Install curl on Alpine:
 
-```sql
+-- Install curl on Alpine
 SELECT RUN_CMD(c, "apk add --no-cache curl") FROM t1 WHERE id = 3;
-```
 
-Run an API request from within the container:
-
-```sql
+-- Perform an API request from within the container (Dragon Ball API example)
 SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2") FROM t1 WHERE id = 3;
+
+-- Extract the "name" key from the JSON response
+SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", name) FROM t1 WHERE id = 3;
+
+-- Return additional info like id and container metadata in the same query
+SELECT 
+  RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", name) AS characterName,
+  id,
+  METADATA(c) AS containerMetadata
+FROM t1
+WHERE id = 3;
 ```
 
-Extract a specific key from the response:
-```sql
-
-SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", 'name') FROM t1 WHERE id = 3;
-```
-
-Combine metadata and other details:
-
-```sql
-SELECT RUN_CMD(c, "curl -s https://dragonball-api.com/api/characters/2", 'name'), id, METADATA(c) FROM t1 WHERE id = 3;
-```
-
-
-## Additional Features
-
-### Use wildcards like in any SQL query:
-```sql
-SELECT * FROM tablename;
-```
-
-#### In the frontend, you can highlight a specific SQL row and execute it just like in any SQL editor.
-
-
+**Note**: In the frontend, you can highlight the row of SQL you want to execute and press **Run**—it will execute only that highlighted row, just like in many SQL editors.  
+Happy container-managing with **Jagura**!
