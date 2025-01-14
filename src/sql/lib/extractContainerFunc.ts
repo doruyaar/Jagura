@@ -1,20 +1,9 @@
 import { ContainerAction } from "./types";
 
-/**
- * Extracts the function name from the input string.
- * @param input - The input string containing the function call.
- * @param openParenthesisIdx - The index of the opening parenthesis.
- * @returns The function name as a string.
- */
 const getFunctionName = (input: string, openParenthesisIdx: number): string => {
   return input.substring(0, openParenthesisIdx).trim();
 };
 
-/**
- * Splits the parameters string into individual arguments, handling quoted strings.
- * @param paramsString - The string containing the parameters.
- * @returns An array of parameter strings.
- */
 const splitArgs = (paramsString: string): string[] => {
   const args: string[] = [];
   let currentArg = '';
@@ -50,12 +39,7 @@ const splitArgs = (paramsString: string): string[] => {
   return args;
 };
 
-/**
- * Extracts and cleans the function parameters from the input string.
- * @param input - The input string containing the function call.
- * @param openParenthesisIdx - The index of the opening parenthesis.
- * @returns An array of parameter strings.
- */
+
 const getFunctionParams = (input: string, openParenthesisIdx: number): string[] => {
   const paramsString = input.substring(openParenthesisIdx + 1, input.length - 1).trim();
 
@@ -64,12 +48,6 @@ const getFunctionParams = (input: string, openParenthesisIdx: number): string[] 
   return splitParams.map(param => param.trim());
 };
 
-/**
- * Parses a container function call string and extracts its components.
- * @param input - The input string containing the function call.
- * @returns An object with `containerCol`, `command`, and `args`.
- * @throws Will throw an error if the input format is invalid.
- */
 export const extractContainerFunc = (input: string) => {
   input = input.trim();
   const openParenthesisIdx = input.indexOf('(');
