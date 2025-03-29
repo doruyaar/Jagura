@@ -41,7 +41,7 @@ Jagura is designed to feel familiar to anyone using SQL. Create tables, insert r
 To run Jagura, you will need:
 
 1. **[Jagura (this project)](https://github.com/doruyaar/Jagura)**
-2. **[Jagura-UI (other project)]([https://github.com/doruyaar/Jagura-UI)**
+2. **[Jagura-UI (other project)]([https://github.com/doruyaar/Jagura-UI](https://github.com/doruyaar/Jagura-UI))**
 3. **[Docker Desktop](https://www.docker.com/products/docker-desktop)**, running in the background.
 4. **Docker images** you want to use (e.g., `alpine`, `nginx`, etc.).
 
